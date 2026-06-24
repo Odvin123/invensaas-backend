@@ -13,7 +13,6 @@ const { setTenant } = require('./middleware/setTenant');
 
 const app = express();
 
-// ✅ PUERTO CORREGIDO - Render usa 10000
 const port = process.env.PORT || 10000;
 
 // IMPORTACIÓN DE RUTAS MODULARES
