@@ -2,33 +2,34 @@ require('dotenv').config();
 const express = require('express');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
-const cors = require('cors'); 
-const nodemailer = require('nodemailer'); 
-const jwt = require('jsonwebtoken'); 
-const db = require('./db'); 
+const cors = require('cors');
+const nodemailer = require('nodemailer');
+const jwt = require('jsonwebtoken');
+const db = require('./db');
 
 // IMPORTACIÓN DE MIDDLEWARES
-const { verifyToken } = require('./middleware/auth'); 
-const { setTenant } = require('./middleware/setTenant'); 
+const { verifyToken } = require('./middleware/auth');
+const { setTenant } = require('./middleware/setTenant');
 
 const app = express();
-const port = process.env.PORT || 4000;
+
+// ✅ PUERTO CORREGIDO - Render usa 10000
+const port = process.env.PORT || 10000;
 
 // IMPORTACIÓN DE RUTAS MODULARES
-const proveedoresRouter = require('./routes/proveedores'); 
+const proveedoresRouter = require('./routes/proveedores');
 const categoriasRouter = require('./routes/Categorias');
 const productosRouter = require('./routes/productos');
 const ventasRouter = require('./routes/ventas');
-const clientesRouter = require('./routes/clientes'); 
-const vendedoresRouter = require('./routes/vendedores'); 
+const clientesRouter = require('./routes/clientes');
+const vendedoresRouter = require('./routes/vendedores');
 const entradasRouter = require('./routes/entradas');
-
 
 // Configuración del servicio de correo
 const transporter = nodemailer.createTransport({
     host: process.env.EMAIL_SERVICE_HOST,
     port: process.env.EMAIL_SERVICE_PORT,
-    secure: false, 
+    secure: false,
     auth: {
         user: process.env.EMAIL_SERVICE_USER,
         pass: process.env.EMAIL_SERVICE_PASS
@@ -39,12 +40,11 @@ const transporter = nodemailer.createTransport({
 function generateSixDigitCode() {
     return Math.floor(100000 + Math.random() * 900000).toString();
 }
-// Función para generar un token seguro y aleatorio.
+
 function generateSecureToken() {
     return crypto.randomBytes(32).toString('hex');
 }
 
-// Función para generar una contraseña aleatoria y seguras.
 function generateRandomPassword(length = 12) {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+';
     let password = '';
@@ -54,38 +54,37 @@ function generateRandomPassword(length = 12) {
     return password;
 }
 
-
-// Configuración de CORS para Vercel
 app.use(cors({
     origin: [
-        'https://sistema-inventario-gilt.vercel.app', // TU DOMINIO DE VERCEL
-        'http://localhost:5500',   // Para desarrollo local
-        'http://127.0.0.1:5500'    // Otro puerto común de Live Server
+        'https://invensaas-frontend.vercel.app', // ← CAMBIA ESTA URL
+        'https://sistema-inventario-gilt.vercel.app',
+        'http://localhost:5500',
+        'http://127.0.0.1:5500'
     ],
-    credentials: true, // Importante si usas cookies o sesiones
+    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-app.use(express.json()); 
+app.use(express.json());
 
 app.get('/', (req, res) => {
     res.json({ message: 'API de Inventario SaaS en funcionamiento.' });
 });
 
-
-// RUTAS MODULARES CON AISLAMIENTO (verifyToken, setTenant)
-// Todas las rutas de inventario de una empresa deben usar ambos middlewares.
-app.use('/api/admin/proveedores', verifyToken, setTenant, proveedoresRouter); 
+// RUTAS MODULARES
+app.use('/api/admin/proveedores', verifyToken, setTenant, proveedoresRouter);
 app.use('/api/admin/categorias', verifyToken, setTenant, categoriasRouter);
 app.use('/api/admin/productos', verifyToken, setTenant, productosRouter);
 app.use('/api/admin/ventas', verifyToken, setTenant, ventasRouter);
-app.use('/api/admin/clientes', verifyToken, setTenant, clientesRouter); 
+app.use('/api/admin/clientes', verifyToken, setTenant, clientesRouter);
 app.use('/api/admin/vendedores', verifyToken, setTenant, vendedoresRouter);
 app.use('/api/admin/inventario/entradas', verifyToken, setTenant, entradasRouter);
 
+// ============================================
+// RUTAS DE AUTENTICACIÓN
+// ============================================
 
-// Evitar Duplicados de Tenant ID
 app.get('/api/check-tenant/:tenantId', async (req, res) => {
     const { tenantId } = req.params;
     if (!tenantId) {
