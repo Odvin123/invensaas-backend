@@ -54,11 +54,16 @@ function generateRandomPassword(length = 12) {
 }
 
 app.use(cors({
-    origin: '*', // ⚠️ Temporalmente permitir todas las IPs para pruebas
+    origin: [
+        'https://invensaas-sistema.vercel.app', 
+        'https://sistema-inventario-gilt.vercel.app',
+        'http://localhost:5500',
+        'http://127.0.0.1:5500'
+    ],
+    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
-
 app.use(express.json());
 
 
