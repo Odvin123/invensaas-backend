@@ -363,15 +363,25 @@ app.post('/api/cambio-pw-forzado', async (req, res) => {
     }
 });
 
-//Registros y Login de los Usuarios (Código Corregido)
+//Registros y Login de los Usuarios (CON LOGS PARA DEBUG)
 app.post('/api/login', async (req, res) => {
     const { tenant_id, correo_electronico, password } = req.body;
 
+    console.log('🔐 ===== INTENTO DE LOGIN =====');
+    console.log('📧 Tenant ID:', tenant_id);
+    console.log('📧 Email:', correo_electronico);
+    console.log('🔑 Password recibida:', password ? '✅ Sí (oculta)' : '❌ No');
+
     if (!tenant_id || !correo_electronico || !password) {
+        console.log('❌ Faltan credenciales');
         return res.status(400).json({ success: false, message: 'Faltan credenciales.' });
     }
 
     try {
+        console.log('📡 Consultando base de datos...');
+        console.log('   - Buscando email:', correo_electronico);
+        console.log('   - Buscando tenant:', tenant_id);
+        
         const result = await db.query(
             `SELECT u.*, e.tenant_id, e.id AS empresa_id
              FROM usuarios u
@@ -380,18 +390,34 @@ app.post('/api/login', async (req, res) => {
             [correo_electronico, tenant_id]
         );
 
+        console.log('📊 Resultado de la consulta:');
+        console.log('   - Filas encontradas:', result.rowCount);
+
         if (result.rowCount === 0) {
+            console.log('❌ Usuario NO encontrado');
+            console.log('   - Verifica que el email existe en la tabla usuarios');
+            console.log('   - Verifica que el tenant_id existe en la tabla empresas');
             return res.status(401).json({ success: false, message: 'Credenciales inválidas o Tenant ID incorrecto.' });
         }
 
         const usuario = result.rows[0];
+        console.log('✅ Usuario ENCONTRADO:');
+        console.log('   - ID:', usuario.id);
+        console.log('   - Nombre:', usuario.nombre);
+        console.log('   - Email:', usuario.correo_electronico);
+        console.log('   - Rol:', usuario.rol);
+        console.log('   - Hash:', usuario.password_hash ? '✅ Tiene hash' : '❌ NO tiene hash');
 
-        const passwordMatch = await bcrypt.compare(password, usuario.password_hash); 
+        console.log('🔑 Verificando contraseña...');
+        const passwordMatch = await bcrypt.compare(password, usuario.password_hash);
+        console.log('   - ¿Coincide?', passwordMatch ? '✅ SÍ' : '❌ NO');
 
         if (!passwordMatch) {
+            console.log('❌ Contraseña incorrecta');
             return res.status(401).json({ success: false, message: 'Credenciales inválidas o Tenant ID incorrecto.' });
         }
         
+        console.log('✅ Autenticación exitosa');
         const payload = {
             id: usuario.id,
             tenant_id: usuario.tenant_id, 
@@ -399,7 +425,9 @@ app.post('/api/login', async (req, res) => {
             rol: usuario.rol
         };
 
+        console.log('🎫 Generando JWT...');
         const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '24h' });
+        console.log('✅ Token generado correctamente');
         
         return res.status(200).json({
             success: true,
@@ -411,11 +439,12 @@ app.post('/api/login', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error durante el login:', error);
+        console.error('❌ Error durante el login:', error);
+        console.error('   - Mensaje:', error.message);
+        console.error('   - Stack:', error.stack);
         res.status(500).json({ success: false, message: 'Error interno del servidor.' });
     }
 });
-
 //Eliminación de Empresas y todos sus Usuarios
 app.delete('/api/empresa/:tenantId', verifyToken, async (req, res) => {
     if (req.usuario.rol !== 'super_admin') {
