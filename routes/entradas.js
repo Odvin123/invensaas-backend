@@ -1,8 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const pool = require('../db');
+const db = require('../db');  // ← CAMBIADO: pool → db
 const { verifyToken } = require('../middleware/auth');
-
 
 router.post('/', verifyToken, async (req, res) => {
     if (!req.tenantId) {
@@ -24,7 +23,7 @@ router.post('/', verifyToken, async (req, res) => {
         }
     }
 
-    const client = await pool.getClient();
+    const client = await db.getClient();  // ← CAMBIADO: pool → db
     try {
         await client.query('BEGIN');
 
@@ -40,12 +39,13 @@ router.post('/', verifyToken, async (req, res) => {
                 throw new Error(`Producto ID ${producto_id} no encontrado o no pertenece a su empresa.`);
             }
 
-            const stockActual = productoRes.rows[0].stock;
-            const nuevoStock = stockActual + cantidad;
+            const stockActual = parseFloat(productoRes.rows[0].stock) || 0;
+            const cantidadNum = parseFloat(cantidad) || 0;
+            const nuevoStock = stockActual + cantidadNum;
 
             // Actualizar stock
             await client.query(
-                'UPDATE productos SET stock = $1 WHERE id = $2',
+                'UPDATE productos SET stock = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
                 [nuevoStock, producto_id]
             );
 
@@ -58,7 +58,7 @@ router.post('/', verifyToken, async (req, res) => {
                     empresaId,
                     producto_id,
                     'ENTRADA',
-                    cantidad,
+                    cantidadNum,
                     nuevoStock,
                     usuarioId,
                     referencia || 'COMPRA-MANUAL',
@@ -82,7 +82,6 @@ router.post('/', verifyToken, async (req, res) => {
         client.release();
     }
 });
-
 
 router.get('/', verifyToken, async (req, res) => {
     let { tipo, inicio, fin } = req.query;
@@ -133,7 +132,7 @@ router.get('/', verifyToken, async (req, res) => {
     queryText += ` ORDER BY m.fecha DESC`;
 
     try {
-        const result = await pool.query(queryText, params);
+        const result = await db.query(queryText, params);  // ← CAMBIADO: pool → db
         res.status(200).json({ success: true, movimientos: result.rows });
     } catch (error) {
         console.error('Error al listar movimientos:', error);
