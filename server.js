@@ -16,10 +16,7 @@ console.log('DATABASE_URL existe?', !!process.env.DATABASE_URL);
 console.log('=====================================');
 
 const db = require('./db');
-// Después de const db = require('./db');
-// Agrega esto para probar la conexión inmediatamente:
 
-// PRUEBA DE CONEXIÓN A LA BASE DE DATOS
 (async () => {
     try {
         console.log('🔌 Probando conexión a la base de datos...');

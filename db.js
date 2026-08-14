@@ -4,23 +4,19 @@ const { Pool } = require('pg');
 let poolConfig;
 
 if (process.env.NODE_ENV === 'production') {
-    console.log('🔧 Configurando para PRODUCCIÓN...');
-    console.log('📌 Usando variables separadas:');
-    console.log('   Host:', process.env.PGHOST);
-    console.log('   User:', process.env.PGUSER);
-    console.log('   Database:', process.env.PGDATABASE);
-    console.log('   Port:', process.env.PGPORT);
+    console.log('🔧 Configurando para PRODUCCIÓN con IPv6 directa...');
+    
+    const SUPABASE_IPV6 = '2600:1f14:b9e:7b00:9201:6e2f:e61e:8ffa';
     
     poolConfig = {
-        host: process.env.PGHOST,
-        user: process.env.PGUSER,
+        host: SUPABASE_IPV6,
+        user: process.env.PGUSER || 'postgres',
         password: process.env.PGPASSWORD,
-        database: process.env.PGDATABASE,
+        database: process.env.PGDATABASE || 'postgres',
         port: parseInt(process.env.PGPORT) || 5432,
         ssl: {
             rejectUnauthorized: false
         },
-        family: 4,
         connectionTimeoutMillis: 10000,
         idleTimeoutMillis: 30000,
         max: 10,
@@ -43,7 +39,6 @@ console.log('📋 Configuración final:', {
     database: poolConfig.database,
     port: poolConfig.port,
     ssl: !!poolConfig.ssl,
-    family: poolConfig.family || 'default'
 });
 
 const pool = new Pool(poolConfig);
