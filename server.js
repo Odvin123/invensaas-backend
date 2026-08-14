@@ -363,8 +363,8 @@ app.post('/api/cambio-pw-forzado', async (req, res) => {
         res.status(500).json({ success: false, message: 'Error interno.' });
     }
 });
-//Registros y Login de los Usuarios (CON LOWER)
-app.post('/api/login', loginLimiter,async (req, res) => {
+//Registros y Login de los Usuarios (CON LOWER para email Y tenant)
+app.post('/api/login', loginLimiter, async (req, res) => {
     const { tenant_id, correo_electronico, password } = req.body;
 
     console.log('🔐 ===== INTENTO DE LOGIN =====');
@@ -382,12 +382,13 @@ app.post('/api/login', loginLimiter,async (req, res) => {
         console.log('   - Buscando email:', correo_electronico);
         console.log('   - Buscando tenant:', tenant_id);
         
-        // 🔥 Usar LOWER() para que NO distinga mayúsculas/minúsculas
+        // 🔥 USAR LOWER() PARA AMBOS (email Y tenant_id)
         const result = await db.query(
             `SELECT u.*, e.tenant_id, e.id AS empresa_id
              FROM usuarios u
              JOIN empresas e ON u.empresa_id = e.id
-             WHERE LOWER(u.correo_electronico) = LOWER($1) AND e.tenant_id = $2`,
+             WHERE LOWER(u.correo_electronico) = LOWER($1) 
+               AND LOWER(e.tenant_id) = LOWER($2)`,
             [correo_electronico, tenant_id]
         );
 
