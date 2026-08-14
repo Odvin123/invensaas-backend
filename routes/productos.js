@@ -115,7 +115,7 @@ router.post('/', verifyToken, checkAdminRole, async (req, res) => {
             );
         }
         
-        res.status(201).json({ 
+      return  res.status(201).json({ 
             success: true, 
             message: 'Producto creado exitosamente.',
             producto: result.rows[0]
