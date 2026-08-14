@@ -3,11 +3,10 @@ const router = express.Router();
 const db = require('../db'); 
 const { verifyToken, checkRole } = require('../middleware/auth'); 
 
-
 router.post('/', verifyToken, checkRole(['administrador', 'super_admin']), async (req, res) => {
     const client = await db.getClient(); 
     
-    const { cliente_id = 1, vendedor_id = 1, es_factura, detalles, pagos } = req.body;
+    const { cliente_id, vendedor_id = 1, es_factura, detalles, pagos } = req.body;
     const empresa_id = req.usuario.empresa_id; 
 
     if (!empresa_id || !detalles || detalles.length === 0 || !pagos || pagos.length === 0) {
@@ -17,6 +16,82 @@ router.post('/', verifyToken, checkRole(['administrador', 'super_admin']), async
     try {
         await client.query('BEGIN');
 
+        // 🔥 1. VERIFICAR Y OBTENER CLIENTE VÁLIDO
+        let clienteFinal = cliente_id;
+        
+        if (clienteFinal) {
+            // Verificar que el cliente existe en la empresa
+            const clienteResult = await client.query(
+                'SELECT id FROM clientes WHERE id = $1 AND empresa_id = $2',
+                [clienteFinal, empresa_id]
+            );
+            
+            if (clienteResult.rowCount === 0) {
+                // Si el cliente no existe, buscar el cliente por defecto
+                const defaultCliente = await client.query(
+                    'SELECT id FROM clientes WHERE nombre = $1 AND empresa_id = $2',
+                    ['público general', empresa_id]
+                );
+                
+                if (defaultCliente.rowCount > 0) {
+                    clienteFinal = defaultCliente.rows[0].id;
+                    console.log(`⚠️ Cliente ${cliente_id} no encontrado, usando "público general" (ID: ${clienteFinal})`);
+                } else {
+                    // Si no hay cliente por defecto, crearlo
+                    const newCliente = await client.query(
+                        'INSERT INTO clientes (empresa_id, nombre) VALUES ($1, $2) RETURNING id',
+                        [empresa_id, 'público general']
+                    );
+                    clienteFinal = newCliente.rows[0].id;
+                    console.log(`✅ Cliente "público general" creado con ID: ${clienteFinal}`);
+                }
+            }
+        } else {
+            // Si no se envía cliente_id, usar el cliente por defecto
+            const defaultCliente = await client.query(
+                'SELECT id FROM clientes WHERE nombre = $1 AND empresa_id = $2',
+                ['público general', empresa_id]
+            );
+            
+            if (defaultCliente.rowCount > 0) {
+                clienteFinal = defaultCliente.rows[0].id;
+            } else {
+                const newCliente = await client.query(
+                    'INSERT INTO clientes (empresa_id, nombre) VALUES ($1, $2) RETURNING id',
+                    [empresa_id, 'público general']
+                );
+                clienteFinal = newCliente.rows[0].id;
+            }
+        }
+
+        // 🔥 2. VERIFICAR VENDEDOR
+        let vendedorFinal = vendedor_id;
+        const vendedorResult = await client.query(
+            'SELECT id FROM vendedores WHERE id = $1 AND empresa_id = $2',
+            [vendedor_id, empresa_id]
+        );
+        
+        if (vendedorResult.rowCount === 0) {
+            // Buscar vendedor por defecto
+            const defaultVendedor = await client.query(
+                'SELECT id FROM vendedores WHERE nombre = $1 AND empresa_id = $2',
+                ['administrador', empresa_id]
+            );
+            
+            if (defaultVendedor.rowCount > 0) {
+                vendedorFinal = defaultVendedor.rows[0].id;
+            } else {
+                const newVendedor = await client.query(
+                    'INSERT INTO vendedores (empresa_id, nombre) VALUES ($1, $2) RETURNING id',
+                    [empresa_id, 'administrador']
+                );
+                vendedorFinal = newVendedor.rows[0].id;
+            }
+        }
+
+        console.log(`📌 Cliente ID: ${clienteFinal}, Vendedor ID: ${vendedorFinal}`);
+
+        // 🔥 3. OBTENER FOLIO
         const folioResult = await client.query(
             'SELECT ultimo_folio FROM control_folios WHERE empresa_id = $1 FOR UPDATE',
             [empresa_id]
@@ -32,8 +107,7 @@ router.post('/', verifyToken, checkRole(['administrador', 'super_admin']), async
             await client.query('UPDATE control_folios SET ultimo_folio = $1 WHERE empresa_id = $2', [nuevoFolio, empresa_id]);
         }
 
-        
-        let totalVentaCalculado = 0;
+        // 🔥 4. CALCULAR VENTA
         let subtotalVenta = 0;
         const impuesto = 0; 
         const descuento = 0; 
@@ -73,23 +147,21 @@ router.post('/', verifyToken, checkRole(['administrador', 'super_admin']), async
             });
         }
         
-        totalVentaCalculado = subtotalVenta + impuesto - descuento;
+        const totalVentaCalculado = subtotalVenta + impuesto - descuento;
 
-       
+        // 🔥 5. VERIFICAR PAGOS
         let totalPagado = 0;
         for (const pago of pagos) {
             totalPagado += parseFloat(pago.monto);
         }
         
         if (totalPagado < totalVentaCalculado) {
-             throw new Error(`El total pagado (${totalPagado.toFixed(2)}) es menor que el total de la venta (${totalVentaCalculado.toFixed(2)}).`);
+            throw new Error(`El total pagado (${totalPagado.toFixed(2)}) es menor que el total de la venta (${totalVentaCalculado.toFixed(2)}).`);
         }
         
         const cambio = totalPagado - totalVentaCalculado;
 
-        // ---------------------------
-        // 4. Insertar venta
-        // ---------------------------
+        // 🔥 6. INSERTAR VENTA
         const ventaInsertQuery = `
             INSERT INTO ventas (empresa_id, folio, subtotal, impuesto, descuento, total, es_factura, cliente_id, vendedor_id, usuario_id)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -102,14 +174,14 @@ router.post('/', verifyToken, checkRole(['administrador', 'super_admin']), async
             impuesto, 
             descuento, 
             totalVentaCalculado, 
-            es_factura, 
-            cliente_id, 
-            vendedor_id, 
+            es_factura || false, 
+            clienteFinal, 
+            vendedorFinal, 
             req.usuario.id
         ]);
         const venta_id = ventaResult.rows[0].id;
 
-       
+        // 🔥 7. INSERTAR DETALLES Y ACTUALIZAR STOCK
         for (const detalle of detallesCompletos) {
             await client.query(
                 'INSERT INTO detalle_venta (venta_id, producto_id, cantidad, precio_unitario, costo_unitario, subtotal) VALUES ($1, $2, $3, $4, $5, $6)',
@@ -122,7 +194,7 @@ router.post('/', verifyToken, checkRole(['administrador', 'super_admin']), async
             );
         }
         
-        
+        // 🔥 8. INSERTAR PAGOS
         for (const pago of pagos) {
             await client.query(
                 'INSERT INTO pagos_venta (venta_id, metodo_pago, monto) VALUES ($1, $2, $3)',
@@ -130,7 +202,7 @@ router.post('/', verifyToken, checkRole(['administrador', 'super_admin']), async
             );
         }
 
-        
+        // 🔥 9. REGISTRAR MOVIMIENTOS DE INVENTARIO
         for (const detalle of detallesCompletos) {
             const stockResult = await client.query(
                 'SELECT stock FROM productos WHERE id = $1 AND empresa_id = $2',
@@ -146,7 +218,7 @@ router.post('/', verifyToken, checkRole(['administrador', 'super_admin']), async
                     empresa_id,
                     detalle.producto_id,
                     'SALIDA',
-                    -detalle.cantidad, 
+                    detalle.cantidad, 
                     nuevoStock,
                     req.usuario.id,
                     `VENTA-${venta_id}`,
@@ -161,7 +233,9 @@ router.post('/', verifyToken, checkRole(['administrador', 'super_admin']), async
             success: true, 
             message: 'Venta y pago registrados exitosamente.', 
             folio: nuevoFolio,
-            cambio: cambio.toFixed(2)
+            cambio: cambio.toFixed(2),
+            cliente_utilizado: clienteFinal,
+            vendedor_utilizado: vendedorFinal
         });
 
     } catch (error) {
@@ -177,6 +251,9 @@ router.post('/', verifyToken, checkRole(['administrador', 'super_admin']), async
     }
 });
 
+// ============================================
+// RESTO DE RUTAS (folio_actual, productos, etc.)
+// ============================================
 
 router.get('/folio_actual', verifyToken, async (req, res) => {
     const empresa_id = req.usuario.empresa_id;
@@ -210,7 +287,6 @@ router.get('/folio_actual', verifyToken, async (req, res) => {
     }
 });
 
-// Productos para PDV (solo de la empresa)
 router.get('/productos', verifyToken, async (req, res) => {
     const empresa_id = req.usuario.empresa_id;
     if (!empresa_id) {
@@ -240,7 +316,6 @@ router.get('/productos', verifyToken, async (req, res) => {
     }
 });
 
-// Categorías para PDV
 router.get('/categorias', verifyToken, async (req, res) => {
     const empresa_id = req.usuario.empresa_id;
     try {
@@ -253,7 +328,6 @@ router.get('/categorias', verifyToken, async (req, res) => {
     }
 });
 
-// Proveedores para PDV
 router.get('/proveedores', verifyToken, async (req, res) => {
     const empresa_id = req.usuario.empresa_id;
     try {
@@ -265,7 +339,6 @@ router.get('/proveedores', verifyToken, async (req, res) => {
         res.status(500).json({ success: false, message: 'Error al obtener la lista de proveedores.' });
     }
 });
-
 
 router.get('/reportes', verifyToken, async (req, res) => {
     const { inicio, fin } = req.query;
@@ -331,7 +404,6 @@ router.get('/reportes', verifyToken, async (req, res) => {
     }
 });
 
-// Reporte: Productos vendidos (para análisis de margen)
 router.get('/productos-vendidos', verifyToken, async (req, res) => {
     const { inicio, fin } = req.query;
     const empresaId = req.tenantId;
