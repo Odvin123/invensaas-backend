@@ -5,7 +5,18 @@ const crypto = require('crypto');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
 const jwt = require('jsonwebtoken');
+console.log('=====================================');
+console.log('🔍 DIAGNÓSTICO DE CONEXIÓN:');
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('PGHOST:', process.env.PGHOST);
+console.log('PGUSER:', process.env.PGUSER);
+console.log('PGDATABASE:', process.env.PGDATABASE);
+console.log('PGPORT:', process.env.PGPORT);
+console.log('DATABASE_URL existe?', !!process.env.DATABASE_URL);
+console.log('=====================================');
+
 const db = require('./db');
+console.log('✅ db importado correctamente');
 
 // IMPORTACIÓN DE MIDDLEWARES
 const { verifyToken } = require('./middleware/auth');
