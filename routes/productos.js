@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const pool = require('../db'); 
+const db = require('../db'); // ← CAMBIADO: pool → db
 const { verifyToken } = require('../middleware/auth'); 
 
 const checkAdminRole = (req, res, next) => {
@@ -24,7 +24,7 @@ router.get('/', verifyToken, async (req, res) => {
     }
     
     try {
-        const result = await pool.query(`
+        const result = await db.query(` // ← CAMBIADO
             SELECT 
                 p.id, 
                 p.descripcion, 
@@ -80,7 +80,7 @@ router.post('/', verifyToken, checkAdminRole, async (req, res) => {
             SELECT EXISTS(SELECT 1 FROM categorias WHERE id = $1 AND empresa_id = $3) AS categoria_valida,
                    EXISTS(SELECT 1 FROM proveedores WHERE id = $2 AND empresa_id = $3) AS proveedor_valido
         `;
-        const validationResult = await pool.query(validationQuery, [categoria_id, proveedor_id, empresaId]);
+        const validationResult = await db.query(validationQuery, [categoria_id, proveedor_id, empresaId]); // ← CAMBIADO
         
         if (!validationResult.rows[0].categoria_valida || !validationResult.rows[0].proveedor_valido) {
             return res.status(400).json({ 
@@ -89,15 +89,13 @@ router.post('/', verifyToken, checkAdminRole, async (req, res) => {
             });
         }
         
-        // Insertar producto
-        const result = await pool.query(
+        const result = await db.query( // ← CAMBIADO
             'INSERT INTO productos (proveedor_id, categoria_id, descripcion, stock, costo, precio, empresa_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, descripcion, stock, costo, precio, categoria_id, proveedor_id',
             [proveedor_id, categoria_id, descripcion, parsedStock, parsedCosto, parsedPrecio, empresaId]
         );
 
-        // ✅ REGISTRAR ENTRADA AUTOMÁTICA SI STOCK > 0
         if (parsedStock > 0) {
-            await pool.query(
+            await db.query( // ← CAMBIADO
                 `INSERT INTO movimientos_inventario 
                  (empresa_id, producto_id, tipo, cantidad, nuevo_stock, usuario_id, referencia, motivo)
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
@@ -114,7 +112,7 @@ router.post('/', verifyToken, checkAdminRole, async (req, res) => {
             );
         }
         
-        res.status(201).json({ 
+        return res.status(201).json({  // ← AGREGADO return
             success: true, 
             message: 'Producto creado exitosamente.',
             producto: result.rows[0]
@@ -127,13 +125,12 @@ router.post('/', verifyToken, checkAdminRole, async (req, res) => {
             });
         }
         console.error('Error al crear producto:', err);
-        res.status(500).json({ 
+        return res.status(500).json({ // ← AGREGADO return
             success: false, 
             message: 'Error interno del servidor al crear producto.' 
         });
     }
 });
-
 
 router.put('/:id', verifyToken, checkAdminRole, async (req, res) => {
     if (!req.tenantId) {
@@ -141,11 +138,9 @@ router.put('/:id', verifyToken, checkAdminRole, async (req, res) => {
     }
     
     const { id } = req.params;
-    // ✅ ELIMINAMOS 'stock' de los campos que se pueden actualizar
     const { proveedor_id, categoria_id, descripcion, costo, precio } = req.body;
     const empresaId = req.tenantId;
 
-    // ✅ Validación: stock ya no es obligatorio en la actualización
     if (!proveedor_id || !categoria_id || !descripcion || costo === undefined || precio === undefined) {
         return res.status(400).json({ 
             success: false, 
@@ -164,12 +159,11 @@ router.put('/:id', verifyToken, checkAdminRole, async (req, res) => {
     }
 
     try {
-        // Validar proveedor y categoría
         const validationQuery = `
             SELECT EXISTS(SELECT 1 FROM categorias WHERE id = $1 AND empresa_id = $3) AS categoria_valida,
                    EXISTS(SELECT 1 FROM proveedores WHERE id = $2 AND empresa_id = $3) AS proveedor_valido
         `;
-        const validationResult = await pool.query(validationQuery, [categoria_id, proveedor_id, empresaId]);
+        const validationResult = await db.query(validationQuery, [categoria_id, proveedor_id, empresaId]); // ← CAMBIADO
         
         if (!validationResult.rows[0].categoria_valida || !validationResult.rows[0].proveedor_valido) {
             return res.status(400).json({ 
@@ -178,8 +172,7 @@ router.put('/:id', verifyToken, checkAdminRole, async (req, res) => {
             });
         }
         
-        // ✅ ACTUALIZAR producto SIN modificar el stock
-        const result = await pool.query(
+        const result = await db.query( // ← CAMBIADO
             'UPDATE productos SET proveedor_id = $1, categoria_id = $2, descripcion = $3, costo = $4, precio = $5, updated_at = CURRENT_TIMESTAMP WHERE id = $6 AND empresa_id = $7 RETURNING id',
             [proveedor_id, categoria_id, descripcion, parsedCosto, parsedPrecio, id, empresaId]
         );
@@ -191,7 +184,7 @@ router.put('/:id', verifyToken, checkAdminRole, async (req, res) => {
             });
         }
         
-        res.status(200).json({ 
+        return res.status(200).json({ // ← AGREGADO return
             success: true, 
             message: 'Producto actualizado exitosamente. (Stock NO modificado)' 
         });
@@ -203,7 +196,7 @@ router.put('/:id', verifyToken, checkAdminRole, async (req, res) => {
             });
         }
         console.error('Error al actualizar producto:', err);
-        res.status(500).json({ 
+        return res.status(500).json({ // ← AGREGADO return
             success: false, 
             message: 'Error interno del servidor al actualizar producto.' 
         });
@@ -219,7 +212,7 @@ router.delete('/:id', verifyToken, checkAdminRole, async (req, res) => {
     const empresaId = req.tenantId;
 
     try {
-        const result = await pool.query(
+        const result = await db.query( // ← CAMBIADO
             'DELETE FROM productos WHERE id = $1 AND empresa_id = $2',
             [id, empresaId]
         );
@@ -228,10 +221,10 @@ router.delete('/:id', verifyToken, checkAdminRole, async (req, res) => {
             return res.status(404).json({ success: false, message: 'Producto no encontrado o no pertenece a esta empresa.' });
         }
         
-        res.status(200).json({ success: true, message: 'Producto eliminado exitosamente.' });
+        return res.status(200).json({ success: true, message: 'Producto eliminado exitosamente.' }); // ← AGREGADO return
     } catch (err) {
         console.error('Error al eliminar producto:', err);
-        res.status(500).json({ success: false, message: 'Error interno del servidor al eliminar producto.' });
+        return res.status(500).json({ success: false, message: 'Error interno del servidor al eliminar producto.' }); // ← AGREGADO return
     }
 });
 
