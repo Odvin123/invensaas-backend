@@ -67,7 +67,7 @@ router.post('/', verifyToken, checkAdminRole, async (req, res) => {
         return res.status(400).json({ success: false, message: 'Faltan campos obligatorios para el producto.' });
     }
     
-    const parsedStock = parseInt(stock);
+    const parsedStock = parseFloat(stock);
     const parsedCosto = parseFloat(costo);
     const parsedPrecio = parseFloat(precio);
 
