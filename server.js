@@ -362,8 +362,7 @@ app.post('/api/cambio-pw-forzado', async (req, res) => {
         res.status(500).json({ success: false, message: 'Error interno.' });
     }
 });
-
-//Registros y Login de los Usuarios (CON LOGS PARA DEBUG)
+//Registros y Login de los Usuarios (CON LOWER)
 app.post('/api/login', async (req, res) => {
     const { tenant_id, correo_electronico, password } = req.body;
 
@@ -382,11 +381,12 @@ app.post('/api/login', async (req, res) => {
         console.log('   - Buscando email:', correo_electronico);
         console.log('   - Buscando tenant:', tenant_id);
         
+        // 🔥 Usar LOWER() para que NO distinga mayúsculas/minúsculas
         const result = await db.query(
             `SELECT u.*, e.tenant_id, e.id AS empresa_id
              FROM usuarios u
              JOIN empresas e ON u.empresa_id = e.id
-             WHERE u.correo_electronico = $1 AND e.tenant_id = $2`,
+             WHERE LOWER(u.correo_electronico) = LOWER($1) AND e.tenant_id = $2`,
             [correo_electronico, tenant_id]
         );
 
@@ -395,22 +395,14 @@ app.post('/api/login', async (req, res) => {
 
         if (result.rowCount === 0) {
             console.log('❌ Usuario NO encontrado');
-            console.log('   - Verifica que el email existe en la tabla usuarios');
-            console.log('   - Verifica que el tenant_id existe en la tabla empresas');
             return res.status(401).json({ success: false, message: 'Credenciales inválidas o Tenant ID incorrecto.' });
         }
 
         const usuario = result.rows[0];
-        console.log('✅ Usuario ENCONTRADO:');
-        console.log('   - ID:', usuario.id);
-        console.log('   - Nombre:', usuario.nombre);
-        console.log('   - Email:', usuario.correo_electronico);
-        console.log('   - Rol:', usuario.rol);
-        console.log('   - Hash:', usuario.password_hash ? '✅ Tiene hash' : '❌ NO tiene hash');
+        console.log('✅ Usuario ENCONTRADO:', usuario.correo_electronico);
 
-        console.log('🔑 Verificando contraseña...');
         const passwordMatch = await bcrypt.compare(password, usuario.password_hash);
-        console.log('   - ¿Coincide?', passwordMatch ? '✅ SÍ' : '❌ NO');
+        console.log('   - ¿Contraseña coincide?', passwordMatch ? '✅ SÍ' : '❌ NO');
 
         if (!passwordMatch) {
             console.log('❌ Contraseña incorrecta');
@@ -425,7 +417,6 @@ app.post('/api/login', async (req, res) => {
             rol: usuario.rol
         };
 
-        console.log('🎫 Generando JWT...');
         const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '24h' });
         console.log('✅ Token generado correctamente');
         
@@ -440,8 +431,6 @@ app.post('/api/login', async (req, res) => {
 
     } catch (error) {
         console.error('❌ Error durante el login:', error);
-        console.error('   - Mensaje:', error.message);
-        console.error('   - Stack:', error.stack);
         res.status(500).json({ success: false, message: 'Error interno del servidor.' });
     }
 });
