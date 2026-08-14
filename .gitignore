@@ -1,0 +1,31 @@
+# backend/.gitignore
+
+# Variables de entorno
+.env
+.env.local
+.env.production
+
+# Dependencias
+node_modules/
+package-lock.json
+yarn.lock
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Base de datos local
+*.sqlite
+*.db
