@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
 const jwt = require('jsonwebtoken');
+const movimientosRouter = require('./routes/movimientos');
 console.log('=====================================');
 console.log('🔍 DIAGNÓSTICO DE CONEXIÓN:');
 console.log('NODE_ENV:', process.env.NODE_ENV);
@@ -113,7 +114,7 @@ app.use('/api/admin/ventas', verifyToken, setTenant, ventasRouter);
 app.use('/api/admin/clientes', verifyToken, setTenant, clientesRouter);
 app.use('/api/admin/vendedores', verifyToken, setTenant, vendedoresRouter);
 app.use('/api/admin/inventario/entradas', verifyToken, setTenant, entradasRouter);
-
+app.use('/api/admin/inventario/movimientos', verifyToken, setTenant, movimientosRouter);
 // ============================================
 // RUTAS DE AUTENTICACIÓN
 // ============================================
