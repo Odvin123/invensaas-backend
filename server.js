@@ -16,6 +16,24 @@ console.log('DATABASE_URL existe?', !!process.env.DATABASE_URL);
 console.log('=====================================');
 
 const db = require('./db');
+// Después de const db = require('./db');
+// Agrega esto para probar la conexión inmediatamente:
+
+// PRUEBA DE CONEXIÓN A LA BASE DE DATOS
+(async () => {
+    try {
+        console.log('🔌 Probando conexión a la base de datos...');
+        const testResult = await db.query('SELECT NOW() as time, version() as version');
+        console.log('✅ CONEXIÓN EXITOSA:');
+        console.log('   Hora:', testResult.rows[0].time);
+        console.log('   Versión:', testResult.rows[0].version);
+    } catch (error) {
+        console.error('❌ ERROR DE CONEXIÓN:');
+        console.error('   Mensaje:', error.message);
+        console.error('   Código:', error.code);
+        console.error('   Detalles:', error.detail || 'No disponible');
+    }
+})();
 console.log('✅ db importado correctamente');
 
 // IMPORTACIÓN DE MIDDLEWARES
