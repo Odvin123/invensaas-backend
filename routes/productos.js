@@ -56,7 +56,7 @@ router.get('/', verifyToken, async (req, res) => {
     }
 });
 
-// POST - Crear producto (SOLO CAMBIO: parseInt → parseFloat)
+// POST - Crear producto
 router.post('/', verifyToken, checkAdminRole, async (req, res) => {
     if (!req.tenantId) {
         return res.status(403).json({ success: false, message: 'Acción no permitida para SuperAdmin en esta ruta.' });
@@ -69,7 +69,6 @@ router.post('/', verifyToken, checkAdminRole, async (req, res) => {
         return res.status(400).json({ success: false, message: 'Faltan campos obligatorios para el producto.' });
     }
     
-    // 🔥 ÚNICO CAMBIO: parseInt → parseFloat
     const parsedStock = parseFloat(stock);
     const parsedCosto = parseFloat(costo);
     const parsedPrecio = parseFloat(precio);
@@ -115,11 +114,12 @@ router.post('/', verifyToken, checkAdminRole, async (req, res) => {
             );
         }
         
-      return  res.status(201).json({ 
+        return res.status(201).json({ 
             success: true, 
             message: 'Producto creado exitosamente.',
             producto: result.rows[0]
         });
+        
     } catch (err) {
         if (err.code === '23503') {
             return res.status(400).json({ 
@@ -128,7 +128,7 @@ router.post('/', verifyToken, checkAdminRole, async (req, res) => {
             });
         }
         console.error('Error al crear producto:', err);
-        res.status(500).json({ 
+        return res.status(500).json({ 
             success: false, 
             message: 'Error interno del servidor al crear producto.' 
         });
