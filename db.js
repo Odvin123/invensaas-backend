@@ -5,17 +5,14 @@ let poolConfig;
 
 if (process.env.NODE_ENV === 'production') {
     poolConfig = {
-        host: process.env.PGHOST,
-        user: process.env.PGUSER,
-        password: process.env.PGPASSWORD,
-        database: process.env.PGDATABASE,
-        port: process.env.PGPORT || 5432,
+        connectionString: process.env.DATABASE_URL,
         ssl: {
-            rejectUnauthorized: false  
+            rejectUnauthorized: false 
         },
-        max: 20, 
+        family: 4,  
+        connectionTimeoutMillis: 10000,
         idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 2000,
+        max: 10,
     };
 } else {
     
@@ -25,19 +22,18 @@ if (process.env.NODE_ENV === 'production') {
         password: process.env.PGPASSWORD || 'Odvin123',
         database: process.env.PGDATABASE || 'InvenSaaS',
         port: process.env.PGPORT || 5432,
-        ssl: false, 
+        ssl: false
     };
 }
 
 const pool = new Pool(poolConfig);
 
-// Probar conexión
 pool.on('connect', () => {
     console.log('✅ Conectado a la base de datos');
 });
 
 pool.on('error', (err) => {
-    console.error('❌ Error en la conexión a la base de datos:', err);
+    console.error('❌ Error en la conexión:', err);
 });
 
 const query = (text, params) => pool.query(text, params);
@@ -46,5 +42,4 @@ const getClient = () => pool.connect();
 module.exports = {
     query,
     getClient,
-    pool,
 };
