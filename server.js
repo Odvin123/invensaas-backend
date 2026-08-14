@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const { loginLimiter } = require('./middleware/rateLimiter');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const cors = require('cors');
@@ -363,7 +364,7 @@ app.post('/api/cambio-pw-forzado', async (req, res) => {
     }
 });
 //Registros y Login de los Usuarios (CON LOWER)
-app.post('/api/login', async (req, res) => {
+app.post('/api/login', loginLimiter,async (req, res) => {
     const { tenant_id, correo_electronico, password } = req.body;
 
     console.log('🔐 ===== INTENTO DE LOGIN =====');
