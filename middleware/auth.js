@@ -12,9 +12,21 @@ const verifyToken = (req, res, next) => {
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         
-      
-        req.usuario = decoded; 
+        // 🔥 ESTABLECER DATOS DEL USUARIO EN req
+        req.usuario = decoded;
         
+        // 🔥 AGREGAR tenantId Y esSuperAdmin (importante para los reportes)
+        req.tenantId = decoded.tenant_id;
+        req.esSuperAdmin = decoded.rol === 'super_admin';
+        req.empresaId = decoded.empresa_id;
+
+        console.log('🔑 Usuario autenticado:', {
+            id: req.usuario.id,
+            rol: req.usuario.rol,
+            tenantId: req.tenantId,
+            esSuperAdmin: req.esSuperAdmin
+        });
+
         next(); 
 
     } catch (err) {
@@ -22,16 +34,13 @@ const verifyToken = (req, res, next) => {
     }
 };
 
-
 const checkRole = (roles) => {
     return (req, res, next) => {
-   
         if (!req.usuario || !roles.includes(req.usuario.rol)) {
             return res.status(403).json({ success: false, message: 'Acceso denegado. Rol no autorizado.' });
         }
         next();
     };
 };
-
 
 module.exports = { verifyToken, checkRole };
