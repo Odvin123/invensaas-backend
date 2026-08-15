@@ -6,17 +6,23 @@ const { verifyToken } = require('../middleware/auth');
 
 router.get('/', verifyToken, async (req, res) => {
     try {
-        const tenantId = req.tenantId;
-        const esSuperAdmin = req.esSuperAdmin;
+        // 🔥 OBTENER DATOS DEL USUARIO DESDE req.usuario (lo que ya tiene tu auth.js)
+        const usuario = req.usuario;
+        const tenantId = usuario?.tenant_id;
+        const rol = usuario?.rol;
+        const empresaId = usuario?.empresa_id;
+
+        const esSuperAdmin = rol === 'super_admin';
 
         console.log('📊 ===== OBTENIENDO MOVIMIENTOS =====');
+        console.log('   Usuario ID:', usuario?.id);
+        console.log('   Rol:', rol);
         console.log('   Tenant ID:', tenantId);
+        console.log('   Empresa ID:', empresaId);
         console.log('   Es SuperAdmin:', esSuperAdmin);
 
         // 🔥 SI ES SUPERADMIN, VER TODOS LOS MOVIMIENTOS
-        // SI NO ES SUPERADMIN, FILTRAR POR SU EMPRESA
         if (esSuperAdmin) {
-            // SUPERADMIN: Ve todos los movimientos
             console.log('   🔥 SUPERADMIN: Viendo TODOS los movimientos');
             
             const query = `
@@ -41,7 +47,6 @@ router.get('/', verifyToken, async (req, res) => {
 
             const result = await db.query(query);
             
-            // Calcular stock_antes
             const movimientos = result.rows.map(m => {
                 const stockAntes = Number(m.nuevo_stock) - Number(m.cantidad);
                 return {
@@ -60,24 +65,31 @@ router.get('/', verifyToken, async (req, res) => {
         }
 
         // 🔥 ADMINISTRADOR / VENDEDOR: Filtrar por su empresa
-        if (!tenantId) {
-            console.log('⚠️ No hay tenant_id, devolviendo vacío');
+        if (!empresaId && !tenantId) {
+            console.log('⚠️ No hay empresa_id ni tenant_id, devolviendo vacío');
             return res.json({ success: true, movimientos: [] });
         }
 
-        // Obtener el ID de la empresa
-        const empresaResult = await db.query(
-            'SELECT id FROM empresas WHERE tenant_id = $1',
-            [tenantId]
-        );
+        // Obtener el ID de la empresa (usando tenant_id o empresa_id)
+        let empresaIdReal = empresaId;
 
-        if (empresaResult.rowCount === 0) {
-            console.log('❌ Empresa no encontrada para tenant:', tenantId);
+        // Si no tiene empresa_id pero tiene tenant_id, buscarlo
+        if (!empresaIdReal && tenantId) {
+            const empresaResult = await db.query(
+                'SELECT id FROM empresas WHERE tenant_id = $1',
+                [tenantId]
+            );
+            if (empresaResult.rowCount > 0) {
+                empresaIdReal = empresaResult.rows[0].id;
+            }
+        }
+
+        if (!empresaIdReal) {
+            console.log('❌ No se encontró empresa para el usuario');
             return res.json({ success: true, movimientos: [] });
         }
 
-        const empresaId = empresaResult.rows[0].id;
-        console.log('   🔍 Filtrando por empresa ID:', empresaId);
+        console.log('   🔍 Filtrando por empresa ID:', empresaIdReal);
 
         const query = `
             SELECT 
@@ -97,9 +109,8 @@ router.get('/', verifyToken, async (req, res) => {
             ORDER BY m.fecha DESC
         `;
 
-        const result = await db.query(query, [empresaId]);
+        const result = await db.query(query, [empresaIdReal]);
 
-        // Calcular stock_antes
         const movimientos = result.rows.map(m => {
             const stockAntes = Number(m.nuevo_stock) - Number(m.cantidad);
             return {
@@ -109,7 +120,7 @@ router.get('/', verifyToken, async (req, res) => {
             };
         });
 
-        console.log(`✅ ${movimientos.length} movimientos encontrados para empresa ${empresaId}`);
+        console.log(`✅ ${movimientos.length} movimientos encontrados para empresa ${empresaIdReal}`);
 
         res.json({
             success: true,
