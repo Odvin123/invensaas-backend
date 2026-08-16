@@ -762,6 +762,30 @@ app.get('/api/invitaciones', verifyToken, async (req, res) => {
     }
 });
 
+app.get('/api/check-email/:email', async (req, res) => {
+    const { email } = req.params;
+    
+    if (!email) {
+        return res.status(400).json({ exists: false, message: 'Correo es obligatorio.' });
+    }
+
+    try {
+        const result = await db.query(
+            'SELECT id FROM usuarios WHERE correo_electronico = $1',
+            [email]
+        );
+        
+        if (result.rowCount > 0) {
+            return res.json({ exists: true, message: 'El correo ya está registrado.' });
+        } else {
+            return res.json({ exists: false, message: 'Correo disponible.' });
+        }
+    } catch (error) {
+        console.error('Error al verificar correo:', error);
+        res.status(500).json({ exists: false, message: 'Error interno del servidor.' });
+    }
+});
+
 // Listado de Empresas para SuperAdmin
 app.get('/api/admin/empresas', verifyToken, async (req, res) => { 
     if (req.usuario.rol !== 'super_admin') {
