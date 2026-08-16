@@ -437,6 +437,50 @@ app.post('/api/login', loginLimiter, async (req, res) => {
         res.status(500).json({ success: false, message: 'Error interno del servidor.' });
     }
 });
+
+// token de enlaces de invitacion 
+app.post('/api/invitaciones/generar', verifyToken, async (req, res) => {
+    if (req.usuario.rol !== 'super_admin') {
+        return res.status(403).json({ 
+            success: false, 
+            message: 'Acción no permitida. Solo SuperAdmin.' 
+        });
+    }
+
+    const { notas, dias_validez } = req.body;
+    const dias = parseInt(dias_validez) || 7; // Por defecto 7 días
+
+    try {
+        const token = crypto.randomBytes(32).toString('hex');
+        
+        const result = await db.query(
+            `INSERT INTO invitaciones 
+             (token, creado_por, fecha_expiracion, notas) 
+             VALUES ($1, $2, NOW() + INTERVAL '${dias} days', $3) 
+             RETURNING id, token, fecha_creacion, fecha_expiracion`,
+            [token, req.usuario.id, notas || null]
+        );
+
+        const baseUrl = process.env.FRONTEND_URL || 'https://invensaas-sistema.vercel.app';
+        const enlace = `${baseUrl}/registro_empresa.html?token=${token}`;
+
+        res.status(201).json({
+            success: true,
+            message: 'Token de invitación generado correctamente.',
+            token: token,
+            enlace: enlace,
+            expira: result.rows[0].fecha_expiracion,
+            id: result.rows[0].id
+        });
+
+    } catch (error) {
+        console.error('Error al generar token:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error interno del servidor.' 
+        });
+    }
+});
 //Eliminación de Empresas y todos sus Usuarios
 app.delete('/api/empresa/:tenantId', verifyToken, async (req, res) => {
     if (!req.usuario || req.usuario.rol !== 'super_admin') {
@@ -582,50 +626,63 @@ app.delete('/api/empresa/:tenantId', verifyToken, async (req, res) => {
     }
 });
 
-//Registro de Nuevas Empresas y Administradores
+//Registro de Nuevas Empresas y Administradores 
 app.post('/api/register', async (req, res) => {
-    const { tenant_id, nombre_empresa, nombre_admin, correo_electronico, password, forzar_cambio_pw } = req.body; 
+    const { tenant_id, nombre_empresa, nombre_admin, correo_electronico, password, forzar_cambio_pw, token } = req.body;
+    
+    if (!token) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Se requiere un token de invitación válido para registrarse.' 
+        });
+    }
+
     const emailRegex = /^[^\s@]+@(gmail\.com|outlook\.com|yahoo\.com|icloud\.com)$/i;
 
     if (!emailRegex.test(correo_electronico)) {
         return res.status(400).json({ 
             success: false, 
-            message: 'El formato de correo es inválido o el dominio no está permitido. Solo se aceptan @gmail.com, @outlook.com, @yahoo.com o @icloud.com.' 
+            message: 'El formato de correo es inválido o el dominio no está permitido.' 
+        });
+    }
+
+    let tokenValido = false;
+    let tokenId = null;
+
+    try {
+        const tokenResult = await db.query(
+            `SELECT id, usado, fecha_expiracion 
+             FROM invitaciones 
+             WHERE token = $1 AND usado = FALSE AND fecha_expiracion > NOW()`,
+            [token]
+        );
+
+        if (tokenResult.rowCount === 0) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'El enlace de invitación no es válido, ya fue usado o ha expirado.' 
+            });
+        }
+
+        tokenValido = true;
+        tokenId = tokenResult.rows[0].id;
+
+    } catch (error) {
+        console.error('Error al validar token:', error);
+        return res.status(500).json({ 
+            success: false, 
+            message: 'Error al validar el enlace de invitación.' 
+        });
+    }
+
+    if (!tokenValido) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Token de invitación inválido.' 
         });
     }
 
     const necesitaCambioPw = forzar_cambio_pw === false ? false : true; 
-    
-    try {
-        const preCheck = await db.query(
-            `SELECT 'tenant' AS tipo FROM empresas WHERE tenant_id = $1
-             UNION ALL
-             SELECT 'email' AS tipo FROM usuarios WHERE correo_electronico = $2`,
-            [tenant_id, correo_electronico]
-        );
-
-        if (preCheck.rowCount > 0) {
-            const tipoConflicto = preCheck.rows[0].tipo;
-            let customMessage = '';
-
-            if (tipoConflicto === 'tenant') {
-                customMessage = `Error: El ID de Puesto/Empresa (**${tenant_id}**) ya está en uso.`;
-            } else if (tipoConflicto === 'email') {
-                customMessage = `Error: El Correo Electrónico (**${correo_electronico}**) ya está registrado por otro administrador.`;
-            } else {
-                customMessage = 'Error de unicidad. Revise Tenant ID o Correo Electrónico.';
-            }
-
-            return res.status(409).json({ 
-                success: false,
-                message: customMessage
-            });
-        }
-    } catch (error) {
-        console.error('Error durante la pre-validación:', error);
-        return res.status(500).json({ success: false, message: 'Error interno del servidor durante la validación inicial.' });
-    }
-    
     
     const client = await db.getClient();
     let empresaId; 
@@ -648,6 +705,11 @@ app.post('/api/register', async (req, res) => {
             [empresaId, nombre_admin, correo_electronico, passwordHash, 'administrador', necesitaCambioPw] 
         );
 
+        await client.query(
+            'UPDATE invitaciones SET usado = TRUE, empresa_creada_id = $1, fecha_uso = NOW() WHERE id = $2',
+            [empresaId, tokenId]
+        );
+
         await client.query('COMMIT');
 
         res.status(201).json({
@@ -658,16 +720,47 @@ app.post('/api/register', async (req, res) => {
 
     } catch (error) {
         await client.query('ROLLBACK');
-        
-        console.error('Error FATAL durante la transacción (ROLLBACK ejecutado):', error);
-        
-        res.status(500).json({ success: false, message: 'Error interno del servidor al crear empresa. (Operación revertida).' });
+        console.error('Error FATAL durante la transacción:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error interno del servidor al crear empresa.' 
+        });
         
     } finally {
         client.release();
     }
 });
 
+
+app.get('/api/invitaciones', verifyToken, async (req, res) => {
+    if (req.usuario.rol !== 'super_admin') {
+        return res.status(403).json({ 
+            success: false, 
+            message: 'Acción no permitida. Solo SuperAdmin.' 
+        });
+    }
+
+    try {
+        const result = await db.query(
+            `SELECT i.*, u.nombre AS creador_nombre 
+             FROM invitaciones i
+             LEFT JOIN usuarios u ON i.creado_por = u.id
+             ORDER BY i.fecha_creacion DESC
+             LIMIT 50`
+        );
+
+        res.status(200).json({
+            success: true,
+            invitaciones: result.rows
+        });
+    } catch (error) {
+        console.error('Error al listar invitaciones:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error interno del servidor.' 
+        });
+    }
+});
 
 // Listado de Empresas para SuperAdmin
 app.get('/api/admin/empresas', verifyToken, async (req, res) => { 
