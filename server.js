@@ -53,15 +53,12 @@ const vendedoresRouter = require('./routes/vendedores');
 const entradasRouter = require('./routes/entradas');
 
 // Configuración del servicio de correo
-// ============================================
-// CONFIGURACIÓN DE CORREO (RESEND)
-// ============================================
 const transporter = nodemailer.createTransport({
-    host: process.env.EMAIL_SERVICE_HOST || 'smtp.resend.com',
-    port: parseInt(process.env.EMAIL_SERVICE_PORT) || 587,
-    secure: false,  // TLS
+    host: process.env.EMAIL_SERVICE_HOST,
+    port: parseInt(process.env.EMAIL_SERVICE_PORT) || 465,
+    secure: parseInt(process.env.EMAIL_SERVICE_PORT) === 465 ? true : false,
     auth: {
-        user: process.env.EMAIL_SERVICE_USER || 'resend',
+        user: process.env.EMAIL_SERVICE_USER,
         pass: process.env.EMAIL_SERVICE_PASS
     },
     tls: {
@@ -70,15 +67,6 @@ const transporter = nodemailer.createTransport({
     connectionTimeout: 30000,
     greetingTimeout: 30000,
     socketTimeout: 30000
-});
-
-// Verificar que el transporter funciona
-transporter.verify((error, success) => {
-    if (error) {
-        console.error('❌ Error al configurar Resend:', error);
-    } else {
-        console.log('✅ Transporter de Resend configurado correctamente');
-    }
 });
 
 // Funciones auxiliares
