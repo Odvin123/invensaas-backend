@@ -55,12 +55,18 @@ const entradasRouter = require('./routes/entradas');
 // Configuración del servicio de correo
 const transporter = nodemailer.createTransport({
     host: process.env.EMAIL_SERVICE_HOST,
-    port: process.env.EMAIL_SERVICE_PORT,
-    secure: false,
+    port: parseInt(process.env.EMAIL_SERVICE_PORT) || 465,
+    secure: parseInt(process.env.EMAIL_SERVICE_PORT) === 465 ? true : false,
     auth: {
         user: process.env.EMAIL_SERVICE_USER,
         pass: process.env.EMAIL_SERVICE_PASS
-    }
+    },
+    tls: {
+        rejectUnauthorized: false
+    },
+    connectionTimeout: 30000,
+    greetingTimeout: 30000,
+    socketTimeout: 30000
 });
 
 // Funciones auxiliares
