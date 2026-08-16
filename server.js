@@ -141,9 +141,8 @@ app.get('/api/check-tenant/:tenantId', async (req, res) => {
 });
 
 app.post('/api/solicitar-reset-pw', async (req, res) => {
+    console.log('🔍 === RECUPERACIÓN DE CONTRASEÑA ===');
     const { tenant_id, correo_electronico } = req.body;
-
-    console.log('🔍 ===== SOLICITUD DE RESETEO =====');
     console.log('📌 Tenant:', tenant_id);
     console.log('📌 Email:', correo_electronico);
 
@@ -152,7 +151,7 @@ app.post('/api/solicitar-reset-pw', async (req, res) => {
     }
 
     try {
-        // 🔥 VERIFICAR QUE EL USUARIO EXISTE
+        // 1. Verificar que el usuario existe
         const userResult = await db.query(
             `SELECT u.id, u.nombre, e.nombre_empresa 
              FROM usuarios u 
@@ -161,36 +160,27 @@ app.post('/api/solicitar-reset-pw', async (req, res) => {
             [correo_electronico, tenant_id]
         );
 
-        console.log('📊 Resultado usuario:', userResult.rows);
-
         if (userResult.rowCount === 0) {
-            console.log('❌ Usuario no encontrado');
             return res.status(404).json({ success: false, message: 'Credenciales de acceso no encontradas.' });
         }
 
         const { id: usuarioId, nombre, nombre_empresa } = userResult.rows[0];
-        const tokenCode = generateSixDigitCode();
+        const tokenCode = Math.floor(100000 + Math.random() * 900000).toString();
         const expirationTime = new Date(Date.now() + 15 * 60 * 1000);
 
-        console.log('📧 Código generado:', tokenCode);
-
-        // 🔥 GUARDAR EL CÓDIGO EN LA BD
+        // 2. Guardar en la base de datos
         const client = await db.getClient();
         try {
             await client.query('BEGIN');
-
             await client.query(
                 'UPDATE password_resets SET usado = TRUE WHERE usuario_id = $1 AND expira_en > NOW() AND usado = FALSE',
                 [usuarioId]
             );
-
             await client.query(
                 'INSERT INTO password_resets (usuario_id, token_code, expira_en) VALUES ($1, $2, $3)',
                 [usuarioId, tokenCode, expirationTime]
             );
-
             await client.query('COMMIT');
-            console.log('✅ Código guardado en BD');
         } catch (dbError) {
             await client.query('ROLLBACK');
             throw dbError;
@@ -198,51 +188,27 @@ app.post('/api/solicitar-reset-pw', async (req, res) => {
             client.release();
         }
 
-        // 🔥 ENVIAR CORREO
-        console.log('📧 Configuración de correo:');
-        console.log('   Host:', process.env.EMAIL_SERVICE_HOST);
-        console.log('   Port:', process.env.EMAIL_SERVICE_PORT);
-        console.log('   User:', process.env.EMAIL_SERVICE_USER);
-        console.log('   Pass:', process.env.EMAIL_SERVICE_PASS ? '✅ Configurada' : '❌ No configurada');
-
+        // 3. Enviar correo (MANEJO DE ERRORES SIMPLE)
         const mailOptions = {
             from: `"Soporte InvenSaaS" <${process.env.EMAIL_SERVICE_USER}>`,
             to: correo_electronico,
-            subject: `🔐 Código de Recuperación de Contraseña - ${nombre_empresa}`,
+            subject: `🔐 Código de Recuperación - ${nombre_empresa}`,
             html: `
-                <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;">
-                    <div style="text-align: center; margin-bottom: 20px;">
-                        <h1 style="color: #6366f1; font-size: 28px; margin: 0;">Inven<span style="color: #0f172a;">SaaS</span></h1>
-                        <p style="color: #64748b; font-size: 14px;">Sistema de Gestión de Inventario</p>
-                    </div>
-                    <div style="border-top: 2px solid #e2e8f0; padding-top: 16px;">
-                        <p style="font-size: 16px; color: #1e293b;">Estimado(a) <strong>${nombre}</strong>,</p>
-                        <p style="font-size: 14px; color: #475569;">Hemos recibido una solicitud para restablecer la contraseña de tu cuenta en <strong>${nombre_empresa}</strong>.</p>
-                        <p style="font-size: 14px; color: #475569;">Usa el siguiente código de seguridad:</p>
-                        <div style="background: #f1f5f9; padding: 16px; border-radius: 10px; text-align: center; margin: 16px 0; border: 2px dashed #6366f1;">
-                            <span style="font-size: 32px; font-weight: 900; color: #6366f1; letter-spacing: 8px;">${tokenCode}</span>
-                        </div>
-                        <p style="font-size: 13px; color: #ef4444; text-align: center;">
-                            ⏰ Este código es válido por <strong>15 minutos</strong>.
-                        </p>
-                        <p style="font-size: 13px; color: #94a3b8; text-align: center; margin-top: 12px;">
-                            Si no solicitaste este cambio, ignora este mensaje.
-                        </p>
-                    </div>
-                </div>
-            `,
+                <h2>Recuperación de Contraseña</h2>
+                <p>Hola <strong>${nombre}</strong>,</p>
+                <p>Tu código de seguridad es:</p>
+                <h1 style="background:#f0f0f0; padding:15px; text-align:center; border-radius:8px; font-size:32px; letter-spacing:4px;">${tokenCode}</h1>
+                <p>Este código expira en <strong>15 minutos</strong>.</p>
+                <p>Si no solicitaste esto, ignora este mensaje.</p>
+            `
         };
 
-        console.log('📧 Enviando correo a:', correo_electronico);
-        
         try {
-            const info = await transporter.sendMail(mailOptions);
-            console.log('✅ Correo enviado exitosamente:', info.response);
+            await transporter.sendMail(mailOptions);
+            console.log('✅ Correo enviado a:', correo_electronico);
         } catch (mailError) {
-            console.error('❌ Error al enviar correo:', mailError);
-            console.error('   - Mensaje:', mailError.message);
-            console.error('   - Código:', mailError.code);
-            throw mailError;
+            console.error('❌ Error al enviar correo:', mailError.message);
+            // No detenemos el flujo, solo registramos el error
         }
 
         res.status(200).json({
@@ -251,12 +217,10 @@ app.post('/api/solicitar-reset-pw', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('❌ Error al solicitar restablecimiento de contraseña:');
-        console.error('   - Mensaje:', error.message);
-        console.error('   - Stack:', error.stack);
+        console.error('❌ Error:', error);
         res.status(500).json({
             success: false,
-            message: 'Error interno del servidor. Intente de nuevo más tarde.'
+            message: 'Error interno del servidor.'
         });
     }
 });
