@@ -439,7 +439,7 @@ app.post('/api/login', loginLimiter, async (req, res) => {
 });
 //Eliminación de Empresas y todos sus Usuarios
 app.delete('/api/empresa/:tenantId', verifyToken, async (req, res) => {
-    if (req.usuario.rol !== 'super_admin') {
+    if (!req.usuario || req.usuario.rol !== 'super_admin') {
         return res.status(403).json({ 
             success: false, 
             message: 'Acción de eliminación no permitida. Solo SuperAdmin.' 
@@ -455,26 +455,130 @@ app.delete('/api/empresa/:tenantId', verifyToken, async (req, res) => {
         });
     }
 
+    console.log('🔍 Eliminando empresa:', tenantId);
+
+    const client = await db.getClient();
+
     try {
-        const result = await db.query(
-            'DELETE FROM empresas WHERE tenant_id = $1 RETURNING nombre_empresa',
+        await client.query('BEGIN');
+
+        const empresaResult = await client.query(
+            'SELECT id, nombre_empresa FROM empresas WHERE tenant_id = $1',
             [tenantId]
         );
 
-        if (result.rowCount === 0) {
-            return res.status(404).json({ success: false, message: 'Empresa no encontrada.' });
+        if (empresaResult.rowCount === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Empresa no encontrada.' 
+            });
         }
 
-        const nombreEmpresaEliminada = result.rows[0].nombre_empresa;
+        const empresaId = empresaResult.rows[0].id;
+        const nombreEmpresa = empresaResult.rows[0].nombre_empresa;
+
+        console.log(`✅ Empresa encontrada: ${nombreEmpresa} (ID: ${empresaId})`);
+
+
+        await client.query(
+            'DELETE FROM movimientos_inventario WHERE empresa_id = $1',
+            [empresaId]
+        );
+        console.log('✅ Movimientos eliminados');
+
+        await client.query(
+            'DELETE FROM detalle_venta WHERE venta_id IN (SELECT id FROM ventas WHERE empresa_id = $1)',
+            [empresaId]
+        );
+        console.log('✅ Detalles de ventas eliminados');
+
+        await client.query(
+            'DELETE FROM pagos_venta WHERE venta_id IN (SELECT id FROM ventas WHERE empresa_id = $1)',
+            [empresaId]
+        );
+        console.log('✅ Pagos eliminados');
+
+        await client.query(
+            'DELETE FROM ventas WHERE empresa_id = $1',
+            [empresaId]
+        );
+        console.log('✅ Ventas eliminadas');
+
+        await client.query(
+            'DELETE FROM productos WHERE empresa_id = $1',
+            [empresaId]
+        );
+        console.log('✅ Productos eliminados');
+
+        await client.query(
+            'DELETE FROM proveedores WHERE empresa_id = $1',
+            [empresaId]
+        );
+        console.log('✅ Proveedores eliminados');
+
+        await client.query(
+            'DELETE FROM categorias WHERE empresa_id = $1',
+            [empresaId]
+        );
+        console.log('✅ Categorías eliminadas');
+
+        await client.query(
+            'DELETE FROM clientes WHERE empresa_id = $1',
+            [empresaId]
+        );
+        console.log('✅ Clientes eliminados');
+
+        await client.query(
+            'DELETE FROM vendedores WHERE empresa_id = $1',
+            [empresaId]
+        );
+        console.log('✅ Vendedores eliminados');
+
+        await client.query(
+            'DELETE FROM control_folios WHERE empresa_id = $1',
+            [empresaId]
+        );
+        console.log('✅ Control folios eliminado');
+
+        await client.query(
+            'DELETE FROM password_resets WHERE usuario_id IN (SELECT id FROM usuarios WHERE empresa_id = $1)',
+            [empresaId]
+        );
+        console.log('✅ Password resets eliminados');
+
+        await client.query(
+            'DELETE FROM usuarios WHERE empresa_id = $1',
+            [empresaId]
+        );
+        console.log('✅ Usuarios eliminados');
+
+        await client.query(
+            'DELETE FROM empresas WHERE id = $1',
+            [empresaId]
+        );
+        console.log('✅ Empresa eliminada');
+
+        await client.query('COMMIT');
 
         res.status(200).json({
             success: true,
-            message: `La empresa '${nombreEmpresaEliminada}' (ID: ${tenantId}) y todos sus usuarios han sido eliminados correctamente.`,
+            message: `La empresa '${nombreEmpresa}' (${tenantId}) y todos sus datos han sido eliminados correctamente.`,
         });
 
     } catch (error) {
-        console.error('Error al eliminar empresa:', error);
-        res.status(500).json({ success: false, message: 'Error interno del servidor al eliminar la empresa.' });
+        await client.query('ROLLBACK');
+        console.error('❌ Error al eliminar empresa:', error);
+        console.error('   - Mensaje:', error.message);
+        console.error('   - Código:', error.code);
+        console.error('   - Detalle:', error.detail);
+        
+        res.status(500).json({ 
+            success: false, 
+            message: `Error al eliminar la empresa: ${error.message}` 
+        });
+    } finally {
+        client.release();
     }
 });
 
