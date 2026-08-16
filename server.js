@@ -33,6 +33,13 @@ const db = require('./db');
         console.error('   Detalles:', error.detail || 'No disponible');
     }
 })();
+transporter.verify((error, success) => {
+    if (error) {
+        console.error('❌ Error al verificar transporter:', error);
+    } else {
+        console.log('✅ Transporter verificado correctamente (puerto 465 SSL)');
+    }
+});
 console.log('✅ db importado correctamente');
 
 // IMPORTACIÓN DE MIDDLEWARES
@@ -54,15 +61,20 @@ const entradasRouter = require('./routes/entradas');
 
 // Configuración del servicio de correo
 const transporter = nodemailer.createTransport({
-    host: process.env.EMAIL_SERVICE_HOST,
-    port: process.env.EMAIL_SERVICE_PORT,
-    secure: false,
+    host: process.env.EMAIL_SERVICE_HOST || 'smtp.gmail.com',
+    port: parseInt(process.env.EMAIL_SERVICE_PORT) || 465,  // ← PUERTO 465
+    secure: parseInt(process.env.EMAIL_SERVICE_PORT) === 465 ? true : false,  // ← SSL
     auth: {
         user: process.env.EMAIL_SERVICE_USER,
         pass: process.env.EMAIL_SERVICE_PASS
-    }
+    },
+    tls: {
+        rejectUnauthorized: false
+    },
+    connectionTimeout: 30000,
+    greetingTimeout: 30000,
+    socketTimeout: 30000
 });
-
 // Funciones auxiliares
 function generateSixDigitCode() {
     return Math.floor(100000 + Math.random() * 900000).toString();
