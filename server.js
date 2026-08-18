@@ -52,6 +52,7 @@ const clientesRouter = require('./routes/clientes');
 const vendedoresRouter = require('./routes/vendedores');
 const entradasRouter = require('./routes/entradas');
 
+
 // Configuración del servicio de correo
 const transporter = nodemailer.createTransport({
     host: process.env.EMAIL_SERVICE_HOST,
@@ -120,7 +121,8 @@ app.use('/api/admin/ventas', verifyToken, setTenant, ventasRouter);
 app.use('/api/admin/clientes', verifyToken, setTenant, clientesRouter);
 app.use('/api/admin/vendedores', verifyToken, setTenant, vendedoresRouter);
 app.use('/api/admin/inventario/entradas', verifyToken, setTenant, entradasRouter);
-app.use('/api/admin/inventario/movimientos', verifyToken, setTenant, movimientosRouter);
+app.use('/api/admin/inventario/movimientos', verifyToken, setTenant, movimientosRouter);    
+app.use('/api/admin/cortes', verifyToken, setTenant, require('./routes/cortes'))
 // ============================================
 // RUTAS DE AUTENTICACIÓN
 // ============================================
