@@ -3,6 +3,14 @@ const router = express.Router();
 const db = require('../db');  // ← CAMBIADO: pool → db
 const { verifyToken } = require('../middleware/auth');
 
+
+function calcularPromedioPonderado(stockAnterior, valorAnterior, cantidadNueva, valorNuevo) {
+    const stockTotal = stockAnterior + cantidadNueva;
+    if (stockTotal <= 0) return valorNuevo;
+    if (stockAnterior <= 0) return valorNuevo;
+    return ((stockAnterior * valorAnterior) + (cantidadNueva * valorNuevo)) / stockTotal;
+}
+
 router.post('/', verifyToken, async (req, res) => {
     if (!req.tenantId) {
         return res.status(403).json({ success: false, message: 'Acción no permitida para SuperAdmin.' });
@@ -21,6 +29,12 @@ router.post('/', verifyToken, async (req, res) => {
         if (!item.producto_id || !item.cantidad || item.cantidad <= 0) {
             return res.status(400).json({ success: false, message: 'Cada producto debe tener ID y cantidad positiva.' });
         }
+        if (item.costo !== undefined && item.costo !== null && (isNaN(parseFloat(item.costo)) || parseFloat(item.costo) < 0)) {
+            return res.status(400).json({ success: false, message: 'El costo debe ser un número válido mayor o igual a 0.' });
+        }
+        if (item.precio !== undefined && item.precio !== null && (isNaN(parseFloat(item.precio)) || parseFloat(item.precio) < 0)) {
+            return res.status(400).json({ success: false, message: 'El precio debe ser un número válido mayor o igual a 0.' });
+        }
     }
 
     const client = await db.getClient();  // ← CAMBIADO: pool → db
@@ -31,7 +45,7 @@ router.post('/', verifyToken, async (req, res) => {
             const { producto_id, cantidad } = item;
 
             const productoRes = await client.query(
-                'SELECT id, stock FROM productos WHERE id = $1 AND empresa_id = $2 FOR UPDATE',
+                'SELECT id, stock, costo, precio FROM productos WHERE id = $1 AND empresa_id = $2 FOR UPDATE',
                 [producto_id, empresaId]
             );
 
@@ -40,16 +54,28 @@ router.post('/', verifyToken, async (req, res) => {
             }
 
             const stockActual = parseFloat(productoRes.rows[0].stock) || 0;
+            const costoActual = parseFloat(productoRes.rows[0].costo) || 0;
+            const precioActual = parseFloat(productoRes.rows[0].precio) || 0;
             const cantidadNum = parseFloat(cantidad) || 0;
             const nuevoStock = stockActual + cantidadNum;
 
-            // Actualizar stock
+          
+            const costoIngresado = (item.costo !== undefined && item.costo !== null && !isNaN(parseFloat(item.costo)))
+                ? parseFloat(item.costo)
+                : costoActual;
+            const precioIngresado = (item.precio !== undefined && item.precio !== null && !isNaN(parseFloat(item.precio)))
+                ? parseFloat(item.precio)
+                : precioActual;
+
+           
+            const costoFinal = Number(calcularPromedioPonderado(stockActual, costoActual, cantidadNum, costoIngresado).toFixed(2));
+            const precioFinal = Number(calcularPromedioPonderado(stockActual, precioActual, cantidadNum, precioIngresado).toFixed(2));
+
             await client.query(
-                'UPDATE productos SET stock = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-                [nuevoStock, producto_id]
+                'UPDATE productos SET stock = $1, costo = $2, precio = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $4',
+                [nuevoStock, costoFinal, precioFinal, producto_id]
             );
 
-            // Registrar movimiento
             await client.query(
                 `INSERT INTO movimientos_inventario 
                  (empresa_id, producto_id, tipo, cantidad, nuevo_stock, usuario_id, referencia, motivo)
@@ -132,7 +158,7 @@ router.get('/', verifyToken, async (req, res) => {
     queryText += ` ORDER BY m.fecha DESC`;
 
     try {
-        const result = await db.query(queryText, params);  // ← CAMBIADO: pool → db
+        const result = await db.query(queryText, params);  
         res.status(200).json({ success: true, movimientos: result.rows });
     } catch (error) {
         console.error('Error al listar movimientos:', error);
