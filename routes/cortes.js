@@ -214,6 +214,8 @@ router.post('/realizar', verifyToken, async (req, res) => {
     try {
         await client.query('BEGIN');
         
+        const pagosSeguros = pagos || { efectivo: 0, tarjeta: 0, transferencia: 0, credito: 0 };
+        
         await client.query(
             `INSERT INTO cortes_caja 
              (empresa_id, usuario_id, fecha_apertura, fecha_cierre, fondo_inicial, efectivo_esperado,
@@ -227,27 +229,34 @@ router.post('/realizar', verifyToken, async (req, res) => {
                 null,
                 fondo_inicial || 0,
                 efectivo_esperado || 0,
-                total_ventas,
-                total_costo,
-                ganancia,
-                efectivo_sistema,
-                efectivo_real,
-                diferencia,
-                pagos.efectivo,
-                pagos.tarjeta,
-                pagos.transferencia,
-                pagos.credito
+                total_ventas || 0,
+                total_costo || 0,
+                ganancia || 0,
+                efectivo_sistema || 0,
+                efectivo_real || 0,
+                diferencia || 0,
+                parseFloat(pagosSeguros.efectivo || 0),
+                parseFloat(pagosSeguros.tarjeta || 0),
+                parseFloat(pagosSeguros.transferencia || 0),
+                parseFloat(pagosSeguros.credito || 0)
             ]
         );
         
         await client.query('COMMIT');
         
-        res.json({ success: true, message: 'Corte de caja realizado exitosamente' });
+        res.json({ 
+            success: true, 
+            message: 'Corte de caja realizado exitosamente' 
+        });
         
     } catch (error) {
         await client.query('ROLLBACK');
         console.error('Error al realizar corte de caja:', error);
-        res.status(500).json({ success: false, message: 'Error al realizar el corte' });
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error al realizar el corte',
+            error: error.message 
+        });
     } finally {
         client.release();
     }
