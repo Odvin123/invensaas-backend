@@ -467,10 +467,10 @@ router.get('/productos-vendidos', verifyToken, async (req, res) => {
             p.id AS clave,
             p.descripcion,
             dv.cantidad,
-            dv.subtotal AS venta,
+            (dv.subtotal - COALESCE(dv.descuento, 0)) AS venta,  -- ✅ CON descuento
             dv.precio_unitario,
             dv.costo_unitario * dv.cantidad AS costo,
-            dv.descuento
+            COALESCE(dv.descuento, 0) AS descuento
         FROM ventas v
         INNER JOIN detalle_venta dv ON v.id = dv.venta_id
         INNER JOIN productos p ON dv.producto_id = p.id
@@ -490,7 +490,17 @@ router.get('/productos-vendidos', verifyToken, async (req, res) => {
 
     try {
         const result = await db.query(queryText, params);
-        res.status(200).json({ success: true, productos: result.rows });
+        
+        const productos = result.rows.map(p => {
+            const ventaConDescuento = parseFloat(p.venta) || 0;
+            const costo = parseFloat(p.costo) || 0;
+            return {
+                ...p,
+                ganancia: ventaConDescuento - costo  
+            };
+        });
+
+        res.status(200).json({ success: true, productos: productos });
     } catch (error) {
         console.error('Error en reporte productos vendidos:', error);
         res.status(500).json({ success: false, message: 'Error al generar el reporte.' });
