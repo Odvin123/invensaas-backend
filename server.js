@@ -565,79 +565,126 @@ app.delete('/api/empresa/:tenantId', verifyToken, async (req, res) => {
 
         console.log(`✅ Empresa encontrada: ${nombreEmpresa} (ID: ${empresaId})`);
 
+        // ============================================
+        // 1. ELIMINAR CORTES DE CAJA (PRIMERO)
+        // ============================================
+        await client.query(
+            'DELETE FROM cortes_caja WHERE empresa_id = $1',
+            [empresaId]
+        );
+        console.log('✅ Cortes de caja eliminados');
 
+        // ============================================
+        // 2. ELIMINAR MOVIMIENTOS DE INVENTARIO
+        // ============================================
         await client.query(
             'DELETE FROM movimientos_inventario WHERE empresa_id = $1',
             [empresaId]
         );
         console.log('✅ Movimientos eliminados');
 
+        // ============================================
+        // 3. ELIMINAR DETALLES DE VENTAS
+        // ============================================
         await client.query(
             'DELETE FROM detalle_venta WHERE venta_id IN (SELECT id FROM ventas WHERE empresa_id = $1)',
             [empresaId]
         );
         console.log('✅ Detalles de ventas eliminados');
 
+        // ============================================
+        // 4. ELIMINAR PAGOS DE VENTAS
+        // ============================================
         await client.query(
             'DELETE FROM pagos_venta WHERE venta_id IN (SELECT id FROM ventas WHERE empresa_id = $1)',
             [empresaId]
         );
         console.log('✅ Pagos eliminados');
 
+        // ============================================
+        // 5. ELIMINAR VENTAS
+        // ============================================
         await client.query(
             'DELETE FROM ventas WHERE empresa_id = $1',
             [empresaId]
         );
         console.log('✅ Ventas eliminadas');
 
-        await client.query(
-            'DELETE FROM productos WHERE empresa_id = $1',
-            [empresaId]
-        );
-        console.log('✅ Productos eliminados');
-
-        await client.query(
-            'DELETE FROM proveedores WHERE empresa_id = $1',
-            [empresaId]
-        );
-        console.log('✅ Proveedores eliminados');
-
-        await client.query(
-            'DELETE FROM categorias WHERE empresa_id = $1',
-            [empresaId]
-        );
-        console.log('✅ Categorías eliminadas');
-
-        await client.query(
-            'DELETE FROM clientes WHERE empresa_id = $1',
-            [empresaId]
-        );
-        console.log('✅ Clientes eliminados');
-
-        await client.query(
-            'DELETE FROM vendedores WHERE empresa_id = $1',
-            [empresaId]
-        );
-        console.log('✅ Vendedores eliminados');
-
+        // ============================================
+        // 6. ELIMINAR CONTROL DE FOLIOS
+        // ============================================
         await client.query(
             'DELETE FROM control_folios WHERE empresa_id = $1',
             [empresaId]
         );
         console.log('✅ Control folios eliminado');
 
+        // ============================================
+        // 7. ELIMINAR PRODUCTOS
+        // ============================================
+        await client.query(
+            'DELETE FROM productos WHERE empresa_id = $1',
+            [empresaId]
+        );
+        console.log('✅ Productos eliminados');
+
+        // ============================================
+        // 8. ELIMINAR PROVEEDORES
+        // ============================================
+        await client.query(
+            'DELETE FROM proveedores WHERE empresa_id = $1',
+            [empresaId]
+        );
+        console.log('✅ Proveedores eliminados');
+
+        // ============================================
+        // 9. ELIMINAR CATEGORÍAS
+        // ============================================
+        await client.query(
+            'DELETE FROM categorias WHERE empresa_id = $1',
+            [empresaId]
+        );
+        console.log('✅ Categorías eliminadas');
+
+        // ============================================
+        // 10. ELIMINAR CLIENTES
+        // ============================================
+        await client.query(
+            'DELETE FROM clientes WHERE empresa_id = $1',
+            [empresaId]
+        );
+        console.log('✅ Clientes eliminados');
+
+        // ============================================
+        // 11. ELIMINAR VENDEDORES
+        // ============================================
+        await client.query(
+            'DELETE FROM vendedores WHERE empresa_id = $1',
+            [empresaId]
+        );
+        console.log('✅ Vendedores eliminados');
+
+        // ============================================
+        // 12. ELIMINAR PASSWORD RESETS
+        // ============================================
         await client.query(
             'DELETE FROM password_resets WHERE usuario_id IN (SELECT id FROM usuarios WHERE empresa_id = $1)',
             [empresaId]
         );
         console.log('✅ Password resets eliminados');
 
+        // ============================================
+        // 13. ELIMINAR USUARIOS (AHORA SÍ, DESPUÉS DE CORTES)
+        // ============================================
         await client.query(
             'DELETE FROM usuarios WHERE empresa_id = $1',
             [empresaId]
         );
         console.log('✅ Usuarios eliminados');
 
+        // ============================================
+        // 14. ELIMINAR LA EMPRESA
+        // ============================================
         await client.query(
             'DELETE FROM empresas WHERE id = $1',
             [empresaId]
