@@ -6,7 +6,6 @@ const { verifyToken } = require('../middleware/auth');
 
 router.get('/', verifyToken, async (req, res) => {
     try {
-        // 🔥 OBTENER DATOS DEL USUARIO DESDE req.usuario (lo que ya tiene tu auth.js)
         const usuario = req.usuario;
         const tenantId = usuario?.tenant_id;
         const rol = usuario?.rol;
@@ -21,7 +20,6 @@ router.get('/', verifyToken, async (req, res) => {
         console.log('   Empresa ID:', empresaId);
         console.log('   Es SuperAdmin:', esSuperAdmin);
 
-        // 🔥 SI ES SUPERADMIN, VER TODOS LOS MOVIMIENTOS
         if (esSuperAdmin) {
             console.log('   🔥 SUPERADMIN: Viendo TODOS los movimientos');
             
@@ -30,6 +28,8 @@ router.get('/', verifyToken, async (req, res) => {
                     m.id,
                     m.tipo,
                     m.cantidad,
+                    m.stock_antes,
+                    m.stock_despues,
                     m.nuevo_stock,
                     m.referencia,
                     m.motivo,
@@ -48,12 +48,21 @@ router.get('/', verifyToken, async (req, res) => {
             const result = await db.query(query);
             
             const movimientos = result.rows.map(m => {
-                const stockAntes = Number(m.nuevo_stock) - Number(m.cantidad);
-                return {
-                    ...m,
-                    stock_antes: stockAntes,
-                    stock_despues: m.nuevo_stock
-                };
+                if (m.stock_antes !== undefined && m.stock_antes !== null) {
+                    return {
+                        ...m,
+                        stock_antes: Number(m.stock_antes),
+                        stock_despues: Number(m.stock_despues)
+                    };
+                } else {
+                    const cantidad = Number(m.cantidad) || 0;
+                    const nuevoStock = Number(m.nuevo_stock) || 0;
+                    return {
+                        ...m,
+                        stock_antes: nuevoStock - cantidad,
+                        stock_despues: nuevoStock
+                    };
+                }
             });
 
             console.log(`✅ ${movimientos.length} movimientos encontrados (SUPERADMIN)`);
@@ -64,16 +73,13 @@ router.get('/', verifyToken, async (req, res) => {
             });
         }
 
-        // 🔥 ADMINISTRADOR / VENDEDOR: Filtrar por su empresa
         if (!empresaId && !tenantId) {
             console.log('⚠️ No hay empresa_id ni tenant_id, devolviendo vacío');
             return res.json({ success: true, movimientos: [] });
         }
 
-        // Obtener el ID de la empresa (usando tenant_id o empresa_id)
         let empresaIdReal = empresaId;
 
-        // Si no tiene empresa_id pero tiene tenant_id, buscarlo
         if (!empresaIdReal && tenantId) {
             const empresaResult = await db.query(
                 'SELECT id FROM empresas WHERE tenant_id = $1',
@@ -96,6 +102,8 @@ router.get('/', verifyToken, async (req, res) => {
                 m.id,
                 m.tipo,
                 m.cantidad,
+                m.stock_antes,
+                m.stock_despues,
                 m.nuevo_stock,
                 m.referencia,
                 m.motivo,
@@ -112,12 +120,21 @@ router.get('/', verifyToken, async (req, res) => {
         const result = await db.query(query, [empresaIdReal]);
 
         const movimientos = result.rows.map(m => {
-            const stockAntes = Number(m.nuevo_stock) - Number(m.cantidad);
-            return {
-                ...m,
-                stock_antes: stockAntes,
-                stock_despues: m.nuevo_stock
-            };
+            if (m.stock_antes !== undefined && m.stock_antes !== null) {
+                return {
+                    ...m,
+                    stock_antes: Number(m.stock_antes),
+                    stock_despues: Number(m.stock_despues)
+                };
+            } else {
+                const cantidad = Number(m.cantidad) || 0;
+                const nuevoStock = Number(m.nuevo_stock) || 0;
+                return {
+                    ...m,
+                    stock_antes: nuevoStock - cantidad,
+                    stock_despues: nuevoStock
+                };
+            }
         });
 
         console.log(`✅ ${movimientos.length} movimientos encontrados para empresa ${empresaIdReal}`);
