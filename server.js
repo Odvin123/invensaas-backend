@@ -1,4 +1,8 @@
 require('dotenv').config();
+process.env.TZ = 'America/Managua';
+console.log('🕐 Zona horaria configurada:', process.env.TZ);
+console.log('🕐 Hora actual en Nicaragua:', new Date().toLocaleString('es-NI', { timeZone: 'America/Managua' }));
+console.log('🕐 Hora UTC:', new Date().toISOString());
 const express = require('express');
 const { loginLimiter } = require('./middleware/rateLimiter');
 const bcrypt = require('bcrypt');
@@ -126,6 +130,29 @@ app.use('/api/admin/cortes', verifyToken, setTenant, require('./routes/cortes'))
 // ============================================
 // RUTAS DE AUTENTICACIÓN
 // ============================================
+
+app.get('/api/test-timezone', verifyToken, async (req, res) => {
+    const now = new Date();
+    
+    let dbTimezone = 'No verificada';
+    try {
+        const result = await db.query('SHOW timezone');
+        dbTimezone = result.rows[0].TimeZone;
+    } catch (error) {
+        console.error('Error al verificar timezone en DB:', error);
+    }
+    
+    res.json({
+        success: true,
+        data: {
+            server_time_utc: now.toISOString(),
+            server_time_nicaragua: now.toLocaleString('es-NI', { timeZone: 'America/Managua' }),
+            server_timezone: process.env.TZ,
+            database_timezone: dbTimezone,
+            tenant_id: req.usuario?.tenant_id || 'No disponible'
+        }
+    });
+});
 
 app.get('/api/check-tenant/:tenantId', async (req, res) => {
     const { tenantId } = req.params;
