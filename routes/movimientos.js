@@ -16,7 +16,6 @@ router.get('/', verifyToken, async (req, res) => {
         console.log('📊 ===== OBTENIENDO MOVIMIENTOS =====');
         console.log('   Usuario ID:', usuario?.id);
         console.log('   Rol:', rol);
-        console.log('   Tenant ID:', tenantId);
         console.log('   Empresa ID:', empresaId);
         console.log('   Es SuperAdmin:', esSuperAdmin);
 
@@ -28,8 +27,6 @@ router.get('/', verifyToken, async (req, res) => {
                     m.id,
                     m.tipo,
                     m.cantidad,
-                    m.stock_antes,
-                    m.stock_despues,
                     m.nuevo_stock,
                     m.referencia,
                     m.motivo,
@@ -47,22 +44,29 @@ router.get('/', verifyToken, async (req, res) => {
 
             const result = await db.query(query);
             
+            // ✅ Calcular stock_antes a partir de nuevo_stock y cantidad
             const movimientos = result.rows.map(m => {
-                if (m.stock_antes !== undefined && m.stock_antes !== null) {
-                    return {
-                        ...m,
-                        stock_antes: Number(m.stock_antes),
-                        stock_despues: Number(m.stock_despues)
-                    };
+                const cantidad = Number(m.cantidad) || 0;
+                const nuevoStock = Number(m.nuevo_stock) || 0;
+                const tipo = m.tipo || '';
+                
+                
+                let stockAntes;
+                if (tipo === 'SALIDA') {
+                    stockAntes = nuevoStock + cantidad;
+                } else if (tipo === 'ENTRADA') {
+                    stockAntes = nuevoStock - cantidad;
                 } else {
-                    const cantidad = Number(m.cantidad) || 0;
-                    const nuevoStock = Number(m.nuevo_stock) || 0;
-                    return {
-                        ...m,
-                        stock_antes: nuevoStock - cantidad,
-                        stock_despues: nuevoStock
-                    };
+                    stockAntes = nuevoStock - cantidad; 
                 }
+                
+                return {
+                    ...m,
+                    stock_antes: stockAntes,
+                    stock_despues: nuevoStock,
+                    cantidad: cantidad,
+                    nuevo_stock: nuevoStock
+                };
             });
 
             console.log(`✅ ${movimientos.length} movimientos encontrados (SUPERADMIN)`);
@@ -102,8 +106,6 @@ router.get('/', verifyToken, async (req, res) => {
                 m.id,
                 m.tipo,
                 m.cantidad,
-                m.stock_antes,
-                m.stock_despues,
                 m.nuevo_stock,
                 m.referencia,
                 m.motivo,
@@ -120,21 +122,27 @@ router.get('/', verifyToken, async (req, res) => {
         const result = await db.query(query, [empresaIdReal]);
 
         const movimientos = result.rows.map(m => {
-            if (m.stock_antes !== undefined && m.stock_antes !== null) {
-                return {
-                    ...m,
-                    stock_antes: Number(m.stock_antes),
-                    stock_despues: Number(m.stock_despues)
-                };
+            const cantidad = Number(m.cantidad) || 0;
+            const nuevoStock = Number(m.nuevo_stock) || 0;
+            const tipo = m.tipo || '';
+            
+            
+            let stockAntes;
+            if (tipo === 'SALIDA') {
+                stockAntes = nuevoStock + cantidad;
+            } else if (tipo === 'ENTRADA') {
+                stockAntes = nuevoStock - cantidad;
             } else {
-                const cantidad = Number(m.cantidad) || 0;
-                const nuevoStock = Number(m.nuevo_stock) || 0;
-                return {
-                    ...m,
-                    stock_antes: nuevoStock - cantidad,
-                    stock_despues: nuevoStock
-                };
+                stockAntes = nuevoStock - cantidad; 
             }
+            
+            return {
+                ...m,
+                stock_antes: stockAntes,
+                stock_despues: nuevoStock,
+                cantidad: cantidad,
+                nuevo_stock: nuevoStock
+            };
         });
 
         console.log(`✅ ${movimientos.length} movimientos encontrados para empresa ${empresaIdReal}`);
