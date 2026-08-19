@@ -15,9 +15,6 @@ router.get('/resumen', verifyToken, async (req, res) => {
         const fechaInicioHoy = `${año}-${mes}-${dia} 00:00:00`;
         const fechaFinHoy = `${año}-${mes}-${dia} 23:59:59.999`;
         
-        console.log('📅 Fecha de hoy:', `${año}-${mes}-${dia}`);
-        console.log('🕐 Período:', fechaInicioHoy, 'a', fechaFinHoy);
-        
         const historicoResult = await db.query(`
             SELECT 
                 COALESCE(SUM(v.total), 0) as total_ventas_historico,
@@ -29,7 +26,8 @@ router.get('/resumen', verifyToken, async (req, res) => {
         
         const ventasHoyResult = await db.query(`
             SELECT 
-                COALESCE(SUM(v.total), 0) as total_ventas_hoy
+                COALESCE(SUM(v.total), 0) as total_ventas_hoy,
+                COUNT(DISTINCT v.id) as cantidad_ventas
             FROM ventas v
             WHERE v.empresa_id = $1 
             AND v.fecha_venta >= $2::timestamp
@@ -38,14 +36,14 @@ router.get('/resumen', verifyToken, async (req, res) => {
         
         const pagosHoyResult = await db.query(`
             SELECT 
-                metodo_pago,
-                COALESCE(SUM(pv.monto), 0) as total
+                LOWER(TRIM(pv.metodo_pago)) as metodo_pago,
+                COALESCE(SUM(pv.monto), 0) as total_monto
             FROM pagos_venta pv
-            JOIN ventas v ON pv.venta_id = v.id
+            INNER JOIN ventas v ON pv.venta_id = v.id
             WHERE v.empresa_id = $1
             AND v.fecha_venta >= $2::timestamp
             AND v.fecha_venta <= $3::timestamp
-            GROUP BY metodo_pago
+            GROUP BY LOWER(TRIM(pv.metodo_pago))
         `, [empresa_id, fechaInicioHoy, fechaFinHoy]);
         
         const pagosHoy = {
@@ -56,9 +54,17 @@ router.get('/resumen', verifyToken, async (req, res) => {
         };
         
         pagosHoyResult.rows.forEach(pago => {
-            const metodo = pago.metodo_pago.toLowerCase();
-            if (pagosHoy.hasOwnProperty(metodo)) {
-                pagosHoy[metodo] = parseFloat(pago.total);
+            const metodo = pago.metodo_pago;
+            const monto = parseFloat(pago.total_monto);
+            
+            if (metodo === 'efectivo') {
+                pagosHoy.efectivo = monto;
+            } else if (metodo === 'tarjeta') {
+                pagosHoy.tarjeta = monto;
+            } else if (metodo === 'transferencia') {
+                pagosHoy.transferencia = monto;
+            } else if (metodo === 'credito' || metodo === 'crédito') {
+                pagosHoy.credito = monto;
             }
         });
         
@@ -71,21 +77,14 @@ router.get('/resumen', verifyToken, async (req, res) => {
             ? parseFloat(ultimoCorte.rows[0].fondo_inicial) 
             : 0;
         
-        // 5. CALCULAR VALORES FINALES
         const totalVentasHistorico = parseFloat(historicoResult.rows[0].total_ventas_historico);
         const totalCostoHistorico = parseFloat(historicoResult.rows[0].total_costo_historico);
         const gananciaHistorica = totalVentasHistorico - totalCostoHistorico;
         
         const totalVentasHoy = parseFloat(ventasHoyResult.rows[0].total_ventas_hoy);
+        const cantidadVentasHoy = parseInt(ventasHoyResult.rows[0].cantidad_ventas);
         
         const efectivoEsperadoHoy = fondoInicialSugerido + pagosHoy.efectivo;
-        
-        console.log('✅ Resultados:');
-        console.log('   Ventas históricas:', totalVentasHistorico);
-        console.log('   Ventas hoy:', totalVentasHoy);
-        console.log('   Efectivo hoy:', pagosHoy.efectivo);
-        console.log('   Fondo inicial sugerido:', fondoInicialSugerido);
-        console.log('   Efectivo esperado:', efectivoEsperadoHoy);
         
         res.json({
             success: true,
@@ -97,6 +96,7 @@ router.get('/resumen', verifyToken, async (req, res) => {
                 fecha_inicio_hoy: fechaInicioHoy,
                 fecha_fin_hoy: fechaFinHoy,
                 total_ventas_hoy: totalVentasHoy,
+                cantidad_ventas_hoy: cantidadVentasHoy,
                 pagos_hoy: pagosHoy,
                 fondo_inicial_sugerido: fondoInicialSugerido,
                 efectivo_esperado_hoy: efectivoEsperadoHoy
@@ -104,7 +104,7 @@ router.get('/resumen', verifyToken, async (req, res) => {
         });
         
     } catch (error) {
-        console.error('❌ Error al obtener resumen de corte:', error);
+        console.error('Error al obtener resumen de corte:', error);
         res.status(500).json({ success: false, message: 'Error interno del servidor' });
     }
 });
