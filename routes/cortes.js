@@ -7,6 +7,7 @@ router.get('/resumen', verifyToken, async (req, res) => {
     const empresa_id = req.usuario.empresa_id;
     
     try {
+        // 1. OBTENER FECHA DE HOY
         const hoy = new Date();
         const año = hoy.getFullYear();
         const mes = String(hoy.getMonth() + 1).padStart(2, '0');
@@ -15,59 +16,108 @@ router.get('/resumen', verifyToken, async (req, res) => {
         const fechaInicioHoy = `${año}-${mes}-${dia} 00:00:00`;
         const fechaFinHoy = `${año}-${mes}-${dia} 23:59:59.999`;
         
-        const historicoResult = await db.query(`
-            SELECT 
-                COALESCE(SUM(v.total), 0) as total_ventas_historico,
-                COALESCE(SUM(dv.costo_unitario * dv.cantidad), 0) as total_costo_historico
-            FROM ventas v
-            LEFT JOIN detalle_venta dv ON v.id = dv.venta_id
-            WHERE v.empresa_id = $1
-        `, [empresa_id]);
+        console.log('🔍 BUSCANDO VENTAS DEL DÍA:', fechaInicioHoy, 'a', fechaFinHoy);
+        console.log('🏢 Empresa ID:', empresa_id);
         
-        const ventasHoyResult = await db.query(`
+        // 2. DIAGNÓSTICO - Ver TODAS las ventas del día
+        const ventasDelDia = await db.query(`
             SELECT 
-                COALESCE(SUM(v.total), 0) as total_ventas_hoy,
-                COUNT(DISTINCT v.id) as cantidad_ventas
+                v.id,
+                v.folio,
+                v.total,
+                v.fecha_venta
             FROM ventas v
             WHERE v.empresa_id = $1 
             AND v.fecha_venta >= $2::timestamp
             AND v.fecha_venta <= $3::timestamp
+            ORDER BY v.id ASC
         `, [empresa_id, fechaInicioHoy, fechaFinHoy]);
         
-        const pagosHoyResult = await db.query(`
+        console.log(`📦 Total ventas encontradas: ${ventasDelDia.rows.length}`);
+        ventasDelDia.rows.forEach(v => {
+            console.log(`   - Factura #${v.folio}: C$${v.total}`);
+        });
+        
+        const totalVentasHoy = ventasDelDia.rows.reduce((sum, v) => sum + parseFloat(v.total), 0);
+        console.log('💵 Suma total de ventas del día:', totalVentasHoy);
+        
+        // 3. DIAGNÓSTICO - Ver TODOS los pagos del día
+        const pagosDelDia = await db.query(`
             SELECT 
-                LOWER(TRIM(pv.metodo_pago)) as metodo_pago,
-                COALESCE(SUM(pv.monto), 0) as total_monto
+                pv.id,
+                pv.venta_id,
+                pv.metodo_pago,
+                pv.monto,
+                v.folio
             FROM pagos_venta pv
             INNER JOIN ventas v ON pv.venta_id = v.id
             WHERE v.empresa_id = $1
             AND v.fecha_venta >= $2::timestamp
             AND v.fecha_venta <= $3::timestamp
-            GROUP BY LOWER(TRIM(pv.metodo_pago))
+            ORDER BY pv.id ASC
         `, [empresa_id, fechaInicioHoy, fechaFinHoy]);
         
-        const pagosHoy = {
-            efectivo: 0,
-            tarjeta: 0,
-            transferencia: 0,
-            credito: 0
-        };
-        
-        pagosHoyResult.rows.forEach(pago => {
-            const metodo = pago.metodo_pago;
-            const monto = parseFloat(pago.total_monto);
-            
-            if (metodo === 'efectivo') {
-                pagosHoy.efectivo = monto;
-            } else if (metodo === 'tarjeta') {
-                pagosHoy.tarjeta = monto;
-            } else if (metodo === 'transferencia') {
-                pagosHoy.transferencia = monto;
-            } else if (metodo === 'credito' || metodo === 'crédito') {
-                pagosHoy.credito = monto;
-            }
+        console.log(`💰 Total pagos encontrados: ${pagosDelDia.rows.length}`);
+        pagosDelDia.rows.forEach(p => {
+            console.log(`   - Pago ID ${p.id} (Venta #${p.folio}): ${p.metodo_pago} = C$${p.monto}`);
         });
         
+        // 4. CALCULAR SUMA DE EFECTIVO - CONSULTA CORREGIDA
+        const efectivoResult = await db.query(`
+            SELECT 
+                COALESCE(SUM(pv.monto), 0) as total_efectivo
+            FROM pagos_venta pv
+            INNER JOIN ventas v ON pv.venta_id = v.id
+            WHERE v.empresa_id = $1
+            AND v.fecha_venta >= $2::timestamp
+            AND v.fecha_venta <= $3::timestamp
+            AND LOWER(TRIM(pv.metodo_pago)) = 'efectivo'
+        `, [empresa_id, fechaInicioHoy, fechaFinHoy]);
+        
+        const efectivoTotal = parseFloat(efectivoResult.rows[0].total_efectivo);
+        console.log('✅ TOTAL EFECTIVO CALCULADO:', efectivoTotal);
+        
+        // 5. CALCULAR OTROS MÉTODOS DE PAGO
+        const tarjetaResult = await db.query(`
+            SELECT COALESCE(SUM(pv.monto), 0) as total
+            FROM pagos_venta pv
+            INNER JOIN ventas v ON pv.venta_id = v.id
+            WHERE v.empresa_id = $1
+            AND v.fecha_venta >= $2::timestamp
+            AND v.fecha_venta <= $3::timestamp
+            AND LOWER(TRIM(pv.metodo_pago)) = 'tarjeta'
+        `, [empresa_id, fechaInicioHoy, fechaFinHoy]);
+        
+        const transferenciaResult = await db.query(`
+            SELECT COALESCE(SUM(pv.monto), 0) as total
+            FROM pagos_venta pv
+            INNER JOIN ventas v ON pv.venta_id = v.id
+            WHERE v.empresa_id = $1
+            AND v.fecha_venta >= $2::timestamp
+            AND v.fecha_venta <= $3::timestamp
+            AND LOWER(TRIM(pv.metodo_pago)) = 'transferencia'
+        `, [empresa_id, fechaInicioHoy, fechaFinHoy]);
+        
+        const creditoResult = await db.query(`
+            SELECT COALESCE(SUM(pv.monto), 0) as total
+            FROM pagos_venta pv
+            INNER JOIN ventas v ON pv.venta_id = v.id
+            WHERE v.empresa_id = $1
+            AND v.fecha_venta >= $2::timestamp
+            AND v.fecha_venta <= $3::timestamp
+            AND (LOWER(TRIM(pv.metodo_pago)) = 'credito' OR LOWER(TRIM(pv.metodo_pago)) = 'crédito')
+        `, [empresa_id, fechaInicioHoy, fechaFinHoy]);
+        
+        const pagos = {
+            efectivo: efectivoTotal,
+            tarjeta: parseFloat(tarjetaResult.rows[0].total),
+            transferencia: parseFloat(transferenciaResult.rows[0].total),
+            credito: parseFloat(creditoResult.rows[0].total)
+        };
+        
+        console.log('💳 Pagos totales:', pagos);
+        
+        // 6. OBTENER FONDO INICIAL
         const ultimoCorte = await db.query(
             'SELECT fondo_inicial FROM cortes_caja WHERE empresa_id = $1 ORDER BY fecha_cierre DESC LIMIT 1',
             [empresa_id]
@@ -77,34 +127,24 @@ router.get('/resumen', verifyToken, async (req, res) => {
             ? parseFloat(ultimoCorte.rows[0].fondo_inicial) 
             : 0;
         
-        const totalVentasHistorico = parseFloat(historicoResult.rows[0].total_ventas_historico);
-        const totalCostoHistorico = parseFloat(historicoResult.rows[0].total_costo_historico);
-        const gananciaHistorica = totalVentasHistorico - totalCostoHistorico;
+        const efectivoEsperado = fondoInicialSugerido + efectivoTotal;
         
-        const totalVentasHoy = parseFloat(ventasHoyResult.rows[0].total_ventas_hoy);
-        const cantidadVentasHoy = parseInt(ventasHoyResult.rows[0].cantidad_ventas);
-        
-        const efectivoEsperadoHoy = fondoInicialSugerido + pagosHoy.efectivo;
-        
+        // 7. ENVIAR RESPUESTA
         res.json({
             success: true,
             datos: {
-                total_ventas_historico: totalVentasHistorico,
-                total_costo_historico: totalCostoHistorico,
-                ganancia_historica: gananciaHistorica,
-                
                 fecha_inicio_hoy: fechaInicioHoy,
                 fecha_fin_hoy: fechaFinHoy,
                 total_ventas_hoy: totalVentasHoy,
-                cantidad_ventas_hoy: cantidadVentasHoy,
-                pagos_hoy: pagosHoy,
+                cantidad_ventas_hoy: ventasDelDia.rows.length,
+                pagos: pagos,
                 fondo_inicial_sugerido: fondoInicialSugerido,
-                efectivo_esperado_hoy: efectivoEsperadoHoy
+                efectivo_esperado: efectivoEsperado
             }
         });
         
     } catch (error) {
-        console.error('Error al obtener resumen de corte:', error);
+        console.error('❌ Error:', error);
         res.status(500).json({ success: false, message: 'Error interno del servidor' });
     }
 });
